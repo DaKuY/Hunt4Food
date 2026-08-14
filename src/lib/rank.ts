@@ -124,10 +124,13 @@ export function rankRestaurants(
     dietary: DietaryId[]
     taste: TasteProfile
     limit?: number
+    excludeIds?: Iterable<string>
   },
 ): RankedRestaurant[] {
   const limit = opts.limit ?? 10
-  const ranked: RankedRestaurant[] = places.map((place) => {
+  const exclude = opts.excludeIds ? new Set(opts.excludeIds) : null
+  const pool = exclude ? places.filter((p) => !exclude.has(p.id)) : places
+  const ranked: RankedRestaurant[] = pool.map((place) => {
     const reasons: string[] = []
     let score = 0
 
