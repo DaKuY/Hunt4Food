@@ -126,6 +126,11 @@
   vertical-align: middle;
 }
 
+.keyword-field {
+  margin-top: 1rem;
+  margin-bottom: 0.25rem;
+}
+
 .topbar nav {
   display: flex;
   gap: 1rem;
