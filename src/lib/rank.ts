@@ -1,4 +1,5 @@
 import { cuisineById } from '../data/cuisines'
+import { seedOilGradeScore, type SeedOilInfo } from './seedOil'
 import type {
   CuisineId,
   DietaryId,
@@ -7,6 +8,20 @@ import type {
   Restaurant,
   TasteProfile,
 } from './types'
+
+const GRASS_FED_KEYWORDS = [
+  'grass fed',
+  'grass-fed',
+  'grassfed',
+  'pasture',
+  'pastured',
+  'pasture-raised',
+  'regenerative',
+  '100% grass',
+  'wagyu',
+  'dry aged',
+  'dry-aged',
+]
 
 function haversineKm(a: LatLng, b: LatLng): number {
   const R = 6371
@@ -48,6 +63,13 @@ function dietaryBoost(place: Restaurant, dietary: DietaryId[]): { points: number
     if (d === 'halal' && isYes(place.halal)) {
       points += 10
       reasons.push('Halal-tagged on the map')
+    }
+    if (d === 'grass_fed') {
+      const blob = `${place.name} ${place.cuisineRaw ?? ''} ${place.cuisines.join(' ')}`.toLowerCase()
+      if (GRASS_FED_KEYWORDS.some((k) => blob.includes(k))) {
+        points += 12
+        reasons.push('Grass-fed or pasture-raised signals in the listing')
+      }
     }
   }
   return { points, reasons }
@@ -125,6 +147,7 @@ export function rankRestaurants(
     taste: TasteProfile
     limit?: number
     excludeIds?: Iterable<string>
+    seedOilByPlaceId?: Record<string, SeedOilInfo>
   },
 ): RankedRestaurant[] {
   const limit = opts.limit ?? 10
@@ -149,6 +172,19 @@ export function rankRestaurants(
     const diet = dietaryBoost(place, opts.dietary)
     score += diet.points
     reasons.push(...diet.reasons)
+
+    if (opts.dietary.includes('no_seed_oils') && opts.seedOilByPlaceId) {
+      const info = opts.seedOilByPlaceId[place.id]
+      if (info?.grade) {
+        const boost = seedOilGradeScore(info.grade)
+        score += boost
+        if (boost > 0) {
+          reasons.push(`Seed Oil Tracker grade ${info.grade} — lower seed-oil risk`)
+        } else if (boost < 0) {
+          reasons.push(`Seed Oil Tracker grade ${info.grade} — higher seed-oil use`)
+        }
+      }
+    }
 
     const taste = tasteBoost(place, opts.taste)
     score += taste.points

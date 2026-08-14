@@ -1,12 +1,14 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { HashRouter, Link, Navigate, Route, Routes, useNavigate, useSearchParams } from 'react-router-dom'
-import { cuisineById } from './data/cuisines'
+import { cuisineById, isKnownCuisineId, isKnownDietaryId } from './data/cuisines'
 import { usePlaceDishes } from './hooks/usePlaceDishes'
 import { usePlaceRatings } from './hooks/usePlaceRatings'
+import { usePlaceSeedOil } from './hooks/usePlaceSeedOil'
 import { buildSearchShareUrl } from './lib/links'
 import { pruneExpiredCache } from './lib/storage'
 import { fetchRestaurants } from './lib/overpass'
 import { rankRestaurants } from './lib/rank'
+import { seedOilGradeScore } from './lib/seedOil'
 import {
   loadShortlist,
   loadTaste,
@@ -79,7 +81,10 @@ function SearchFlow() {
   const initialCuisines = useMemo(() => {
     const c = params.get('cuisines')
     if (!c) return [] as CuisineId[]
-    return c.split(',').filter(Boolean).slice(0, 3) as CuisineId[]
+    return c
+      .split(',')
+      .filter((id) => isKnownCuisineId(id))
+      .slice(0, 3) as CuisineId[]
   }, [params])
 
   const [step, setStep] = useState<'city' | 'cuisine' | 'results'>(() => {
@@ -91,7 +96,7 @@ function SearchFlow() {
   const [cuisines, setCuisines] = useState<CuisineId[]>(() => initialCuisines)
   const [dietary, setDietary] = useState<DietaryId[]>(() => {
     const d = params.get('dietary')
-    if (d) return d.split(',').filter(Boolean) as DietaryId[]
+    if (d) return d.split(',').filter((id) => isKnownDietaryId(id)) as DietaryId[]
     return taste.dietaryPrefs
   })
   const [rawPlaces, setRawPlaces] = useState<Restaurant[]>([])
@@ -106,12 +111,17 @@ function SearchFlow() {
   const [shareMessage, setShareMessage] = useState<string | null>(null)
   const searchAbortRef = useRef<AbortController | null>(null)
   const autoRanRef = useRef(false)
+  const seedOilBoostRef = useRef(false)
   const tasteRef = useRef(taste)
   tasteRef.current = taste
 
   const places = displayPlaces
 
   const { ratingsMap, ratingsLoading } = usePlaceRatings(places, city?.label ?? '', step === 'results' && places.length > 0)
+  const { seedOilMap, seedOilLoading } = usePlaceSeedOil(
+    places,
+    step === 'results' && places.length > 0,
+  )
   const { dishesMap, dishesLoading } = usePlaceDishes(
     places,
     city?.label ?? '',
@@ -125,6 +135,31 @@ function SearchFlow() {
     }
   }, [])
 
+  useEffect(() => {
+    if (!dietary.includes('no_seed_oils') || seedOilLoading || displayPlaces.length === 0) return
+    if (seedOilBoostRef.current) return
+    const hasGrade = displayPlaces.some((p) => seedOilMap[p.id]?.grade)
+    if (!hasGrade) return
+
+    seedOilBoostRef.current = true
+    setDisplayPlaces((prev) => {
+      const updated = prev.map((p) => {
+        const info = seedOilMap[p.id]
+        if (!info?.grade) return p
+        const boost = seedOilGradeScore(info.grade)
+        if (boost === 0) return p
+        const reasons = [...p.reasons]
+        const msg =
+          boost > 0
+            ? `Seed Oil Tracker grade ${info.grade} — lower seed-oil risk`
+            : `Seed Oil Tracker grade ${info.grade} — higher seed-oil use`
+        if (!reasons.some((r) => r.includes('Seed Oil Tracker'))) reasons.unshift(msg)
+        return { ...p, score: p.score + boost, reasons: reasons.slice(0, 4) }
+      })
+      return [...updated].sort((a, b) => b.score - a.score)
+    })
+  }, [dietary, seedOilMap, seedOilLoading, displayPlaces.length])
+
   const runSearch = useCallback(
     async (selection: CitySelection, food: CuisineId[], dietaryPrefs: DietaryId[]) => {
       searchAbortRef.current?.abort()
@@ -133,6 +168,7 @@ function SearchFlow() {
       setLoading(true)
       setError(null)
       setStep('results')
+      seedOilBoostRef.current = false
       setRawPlaces([])
       setDisplayPlaces([])
       setFavoriteIds(new Set())
@@ -167,6 +203,7 @@ function SearchFlow() {
     searchAbortRef.current?.abort()
     const ctrl = new AbortController()
     searchAbortRef.current = ctrl
+    seedOilBoostRef.current = false
     setLoading(true)
     setError(null)
 
@@ -291,6 +328,9 @@ function SearchFlow() {
           hasWebsiteOnly={hasWebsiteOnly}
           ratingsMap={ratingsMap}
           ratingsLoading={ratingsLoading}
+          seedOilMap={seedOilMap}
+          seedOilLoading={seedOilLoading}
+          showSeedOil={dietary.includes('no_seed_oils')}
           dishesMap={dishesMap}
           dishesLoading={dishesLoading}
           favoriteIds={favoriteIds}
@@ -462,7 +502,11 @@ function Shell() {
           <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">
             OpenStreetMap contributors
           </a>
-          . Ratings from Google, Yelp, and TripAdvisor when available. Taste profiles stay on your device.
+          . Ratings from Google, Yelp, and TripAdvisor when available. Seed-oil chain grades from{' '}
+          <a href="https://seedoiltracker.com" target="_blank" rel="noreferrer">
+            Seed Oil Tracker
+          </a>
+          . Taste profiles stay on your device.
         </p>
       </footer>
     </div>

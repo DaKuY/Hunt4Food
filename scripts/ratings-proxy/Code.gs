@@ -72,6 +72,7 @@ function fetchYelp_(name, city, lat, lon, wantDishes) {
           rating: biz.rating || null,
           reviewCount: biz.review_count || null,
           url: biz.url || searchUrl,
+          price: biz.price || null,
         };
         if (wantDishes) {
           out.dishes = fetchYelpDishes_(biz.id, biz.url || searchUrl, apiKey);
