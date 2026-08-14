@@ -17,7 +17,7 @@ export function jsonpGet<T>(baseUrl: string, params: Record<string, string>): Pr
     const timer = window.setTimeout(() => {
       cleanup()
       reject(new Error('Proxy timeout'))
-    }, 20000)
+    }, 10000)
 
     function cleanup() {
       window.clearTimeout(timer)

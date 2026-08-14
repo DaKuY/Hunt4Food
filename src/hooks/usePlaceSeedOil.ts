@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { fetchSeedOilInfo, readCachedSeedOil, type SeedOilInfo } from '../lib/seedOil'
+import { mapPool } from '../lib/pool'
 import type { RankedRestaurant } from '../lib/types'
 
 function seedFromCache(places: RankedRestaurant[]): Record<string, SeedOilInfo> {
@@ -16,35 +17,45 @@ export function usePlaceSeedOil(places: RankedRestaurant[], enabled: boolean) {
     enabled ? seedFromCache(places) : {},
   )
   const [loading, setLoading] = useState(false)
+  const placesRef = useRef(places)
+  placesRef.current = places
   const placeIds = places.map((p) => p.id).join(',')
 
   useEffect(() => {
-    if (!enabled || places.length === 0) return
+    if (!enabled || !placeIds) {
+      setMap({})
+      setLoading(false)
+      return
+    }
+    const list = placesRef.current
     const ctrl = new AbortController()
-    setMap(seedFromCache(places))
+    setMap(seedFromCache(list))
     setLoading(true)
 
-    void (async () => {
-      for (const place of places) {
-        if (ctrl.signal.aborted) break
+    void mapPool(
+      list,
+      6,
+      async (place) => {
+        if (ctrl.signal.aborted) return
         try {
           const info = await fetchSeedOilInfo(place, ctrl.signal)
-          setMap((prev) => ({ ...prev, [place.id]: info }))
+          if (!ctrl.signal.aborted) {
+            setMap((prev) => ({ ...prev, [place.id]: info }))
+          }
         } catch {
           // skip
         }
-        if (!readCachedSeedOil(place)) {
-          await new Promise((r) => setTimeout(r, 200))
-        }
-      }
+      },
+      ctrl.signal,
+    ).then(() => {
       if (!ctrl.signal.aborted) setLoading(false)
-    })()
+    })
 
     return () => {
       ctrl.abort()
       setLoading(false)
     }
-  }, [placeIds, enabled, places])
+  }, [placeIds, enabled])
 
   return { seedOilMap: map, seedOilLoading: loading }
 }

@@ -4,7 +4,6 @@ import { googlePriceLevel, mergePrice, yelpPriceLevel, type PriceLevel, type Pri
 import { jsonpGet, ratingsProxyUrl } from './ratingsProxy'
 import { cacheTtlUntilEndOfUtcDay, readCache, utcDayKey, writeCache } from './storage'
 import { loadSettings } from './settings'
-import { fetchTripAdvisorViaDdg } from './tripadvisor'
 import type { Restaurant } from './types'
 
 export { getGoogleQuota, googleQuotaMessage } from './googleQuota'
@@ -269,13 +268,11 @@ async function resolveGoogleRating(
   if (ratingsProxyUrl()) {
     try {
       const data = await fetchProxyRating('google', place, cityLabel)
-      if (data.rating != null || data.priceLevel != null) {
-        const result: SourceRating = { ...base, ...data }
-        writeSourceCache(place, cityLabel, 'google', result)
-        return result
-      }
+      const result: SourceRating = { ...base, ...data }
+      writeSourceCache(place, cityLabel, 'google', result)
+      return result
     } catch {
-      // fall through to direct API
+      // proxy unreachable — try browser Google call
     }
   }
 
@@ -325,19 +322,7 @@ async function resolveProxyRating(
 
   try {
     const data = await fetchProxyRating(source, place, cityLabel)
-    let result: SourceRating = { ...base, ...data }
-
-    if (source === 'tripadvisor' && result.rating == null && !signal?.aborted) {
-      try {
-        const ddg = await fetchTripAdvisorViaDdg(place, cityLabel, signal)
-        if (ddg.rating != null) {
-          result = { ...base, rating: ddg.rating, reviewCount: ddg.reviewCount, url: ddg.url }
-        }
-      } catch {
-        // keep proxy result
-      }
-    }
-
+    const result: SourceRating = { ...base, ...data }
     writeSourceCache(place, cityLabel, source, result)
     return result
   } catch {

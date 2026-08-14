@@ -59,15 +59,6 @@ type SearchResponse = {
   error?: string
 }
 
-type ChainResponse = {
-  chain?: string
-  grade?: string
-  risk_level?: string
-  cooking_oil?: string
-  source?: string
-  error?: string
-}
-
 function emptyInfo(error?: string): SeedOilInfo {
   return {
     grade: null,
@@ -81,21 +72,6 @@ function emptyInfo(error?: string): SeedOilInfo {
 
 export function readCachedSeedOil(place: Restaurant): SeedOilInfo | null {
   return readCache<SeedOilInfo>(cacheKey(place.name))
-}
-
-async function fetchChain(name: string, signal?: AbortSignal): Promise<SeedOilInfo> {
-  const q = encodeURIComponent(normalizeChainQuery(name))
-  const res = await fetch(`${API_BASE}/chain?name=${q}&country=us`, { signal })
-  if (!res.ok) throw new Error(`Seed Oil Tracker ${res.status}`)
-  const data = (await res.json()) as ChainResponse
-  if (!data.grade && !data.chain) return emptyInfo()
-  return {
-    grade: data.grade ?? null,
-    risk: data.risk_level ?? null,
-    cookingOil: data.cooking_oil ?? null,
-    chain: data.chain ?? null,
-    url: data.source ?? ATTRIBUTION,
-  }
 }
 
 async function fetchSearch(name: string, signal?: AbortSignal): Promise<SeedOilInfo> {
@@ -119,10 +95,7 @@ export async function fetchSeedOilInfo(place: Restaurant, signal?: AbortSignal):
   if (cached) return cached
 
   try {
-    let info = await fetchChain(place.name, signal)
-    if (!info.grade) {
-      info = await fetchSearch(place.name, signal)
-    }
+    const info = await fetchSearch(place.name, signal)
     writeCache(cacheKey(place.name), info, cacheTtlUntilEndOfUtcDay())
     return info
   } catch {

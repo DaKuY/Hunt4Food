@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { fetchPopularDishes } from '../lib/dishes'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { signatureDishes } from '../lib/dishes'
 import type { CuisineId, RankedRestaurant } from '../lib/types'
 
 export function usePlaceDishes(
@@ -8,35 +8,32 @@ export function usePlaceDishes(
   selectedCuisines: CuisineId[],
   enabled: boolean,
 ) {
-  const [map, setMap] = useState<Record<string, string[]>>({})
-  const [loading, setLoading] = useState(false)
+  const cuisineKey = selectedCuisines.join(',')
+  const instant = useMemo(() => {
+    if (!enabled) return {}
+    const next: Record<string, string[]> = {}
+    for (const place of places) {
+      next[place.id] = signatureDishes(place, selectedCuisines)
+    }
+    return next
+  }, [enabled, places, selectedCuisines])
+
+  const [map, setMap] = useState<Record<string, string[]>>(instant)
+  const placesRef = useRef(places)
+  placesRef.current = places
   const placeIds = places.map((p) => p.id).join(',')
 
   useEffect(() => {
-    if (!enabled || places.length === 0) return
-    const ctrl = new AbortController()
-    setLoading(true)
-    setMap({})
-
-    void (async () => {
-      for (const place of places) {
-        if (ctrl.signal.aborted) break
-        try {
-          const dishes = await fetchPopularDishes(place, cityLabel, selectedCuisines, ctrl.signal)
-          setMap((prev) => ({ ...prev, [place.id]: dishes }))
-        } catch {
-          // skip
-        }
-        await new Promise((r) => setTimeout(r, 200))
-      }
-      if (!ctrl.signal.aborted) setLoading(false)
-    })()
-
-    return () => {
-      ctrl.abort()
-      setLoading(false)
+    if (!enabled || !placeIds) {
+      setMap({})
+      return
     }
-  }, [placeIds, cityLabel, enabled, places, selectedCuisines])
+    const next: Record<string, string[]> = {}
+    for (const place of placesRef.current) {
+      next[place.id] = signatureDishes(place, selectedCuisines)
+    }
+    setMap(next)
+  }, [placeIds, cityLabel, enabled, cuisineKey, selectedCuisines])
 
-  return { dishesMap: map, dishesLoading: loading }
+  return { dishesMap: map, dishesLoading: false }
 }
