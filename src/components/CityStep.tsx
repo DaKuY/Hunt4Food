@@ -184,7 +184,10 @@ export function CityStep({ onConfirm, initial }: Props) {
       <header className="step-header">
         <p className="eyebrow">Step 1</p>
         <h2>Where are you eating?</h2>
-        <p className="lede">Type a city, or zoom the map to a neighborhood and confirm that area.</p>
+        <p className="lede">
+          Type a city, tap <strong>Use my location</strong>, or zoom the map to a neighborhood and confirm that
+          area.
+        </p>
       </header>
 
       <label className="field">
@@ -196,6 +199,16 @@ export function CityStep({ onConfirm, initial }: Props) {
           autoComplete="off"
         />
       </label>
+
+      <button
+        type="button"
+        className="btn ghost location-btn"
+        onClick={useMyLocation}
+        disabled={locating}
+        aria-busy={locating}
+      >
+        {locating ? 'Locating…' : 'Use my location'}
+      </button>
 
       {searching && <p className="muted">Searching…</p>}
       {error && <p className="error">{error}</p>}
@@ -226,6 +239,16 @@ export function CityStep({ onConfirm, initial }: Props) {
       )}
 
       <div className="map-shell">
+        <button
+          type="button"
+          className="map-locate-btn btn ghost"
+          onClick={useMyLocation}
+          disabled={locating}
+          title="Use my location"
+          aria-label="Use my location"
+        >
+          {locating ? '…' : '⌖'}
+        </button>
         <MapContainer
           key={mapKey}
           center={mapCenter}
@@ -258,9 +281,6 @@ export function CityStep({ onConfirm, initial }: Props) {
       </div>
 
       <div className="step-actions row">
-        <button type="button" className="btn ghost" onClick={useMyLocation} disabled={locating}>
-          {locating ? 'Locating…' : 'Use my location'}
-        </button>
         <button type="button" className="btn primary" onClick={() => void confirmMapArea()}>
           Use this area
         </button>
