@@ -30,8 +30,18 @@ export function SettingsPage() {
     setTesting(true)
     setTestResult(null)
     try {
-      const [yelp, ta] = await Promise.all([
-        jsonpGet<{ rating?: number | null; reviewCount?: number | null; error?: string }>(url, {
+      const settings = loadSettings()
+      const googleParams: Record<string, string> = {
+        source: 'google',
+        name: 'Pizzeria',
+        city: 'San Francisco',
+        lat: '37.7749',
+        lon: '-122.4194',
+      }
+      if (settings.googlePlacesApiKey) googleParams.googleKey = settings.googlePlacesApiKey
+
+      const [yelp, ta, google] = await Promise.all([
+        jsonpGet<{ rating?: number | null; reviewCount?: number | null; price?: string | null; error?: string }>(url, {
           source: 'yelp',
           name: 'Pizzeria',
           city: 'San Francisco',
@@ -43,14 +53,24 @@ export function SettingsPage() {
           name: 'Pizzeria',
           city: 'San Francisco',
         }),
+        jsonpGet<{ rating?: number | null; reviewCount?: number | null; priceLevel?: string | null; error?: string }>(
+          url,
+          googleParams,
+        ),
       ])
       const yelpText =
-        yelp.rating != null ? `Yelp ${yelp.rating}★ (${yelp.reviewCount ?? '?'} reviews)` : yelp.error || 'Yelp: no rating'
+        yelp.rating != null
+          ? `Yelp ${yelp.rating}★${yelp.price ? ` ${yelp.price}` : ''}`
+          : yelp.error || 'Yelp: no rating'
       const taText =
         ta.rating != null
           ? `TripAdvisor ${ta.rating}★ (${ta.reviewCount ?? '?'} reviews)`
           : ta.error || 'TripAdvisor: no rating'
-      setTestResult(`${yelpText} · ${taText}`)
+      const googleText =
+        google.rating != null
+          ? `Google ${google.rating}★ (${google.reviewCount ?? '?'} reviews)`
+          : google.error || 'Google: redeploy proxy with latest Code.gs'
+      setTestResult(`${googleText} · ${yelpText} · ${taText}`)
     } catch (e) {
       setTestResult(`Proxy failed: ${(e as Error).message}`)
     } finally {
@@ -64,8 +84,8 @@ export function SettingsPage() {
         <p className="eyebrow">Settings</p>
         <h2>Ratings &amp; API keys</h2>
         <p className="lede">
-          Google ratings use Places Text Search with strict daily/monthly caps. Yelp and TripAdvisor need a
-          one-time Google Apps Script proxy (browser scraping is blocked on GitHub Pages).
+          Google ratings and price levels run through the Apps Script proxy (referrer-locked keys cannot call
+          Google from the browser). Yelp and TripAdvisor use the same proxy. Redeploy Code.gs after updates.
         </p>
       </header>
 

@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { HashRouter, Link, Navigate, Route, Routes, useSearchParams } from 'react-router-dom'
+import { HashRouter, Link, Navigate, Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { cuisineById, isKnownCuisineId, isKnownDietaryId } from './data/cuisines'
 import { usePlaceDishes } from './hooks/usePlaceDishes'
 import { usePlaceRatings } from './hooks/usePlaceRatings'
@@ -446,19 +446,31 @@ function ShortlistView() {
   )
 }
 
+function SearchRoute() {
+  const location = useLocation()
+  const reset = (location.state as { reset?: number } | null)?.reset ?? 0
+  return <SearchFlow key={reset} />
+}
+
 function Shell() {
+  const navigate = useNavigate()
+
   useEffect(() => {
     ensureCacheGeneration()
     pruneExpiredCache()
   }, [])
 
+  function goHome() {
+    navigate('/', { replace: true, state: { reset: Date.now() } })
+  }
+
   return (
     <div className="app-shell">
       <div className="atmosphere" aria-hidden />
       <header className="topbar">
-        <Link to="/" className="top-brand">
+        <button type="button" className="top-brand" onClick={goHome}>
           OpenPlate
-        </Link>
+        </button>
         <nav>
           <Link to="/taste">My Taste</Link>
           <Link to="/settings">Settings</Link>
@@ -466,7 +478,7 @@ function Shell() {
       </header>
       <main>
         <Routes>
-          <Route path="/" element={<SearchFlow />} />
+          <Route path="/" element={<SearchRoute />} />
           <Route path="/search" element={<Navigate to="/" replace />} />
           <Route path="/taste" element={<TasteRoute />} />
           <Route path="/settings" element={<SettingsPage />} />

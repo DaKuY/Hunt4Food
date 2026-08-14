@@ -1,7 +1,7 @@
 const PREFIX = 'openplate:'
 
 /** Bump to wipe all cached API responses on next app load. */
-export const CACHE_GENERATION = 2
+export const CACHE_GENERATION = 3
 
 export function readJson<T>(key: string, fallback: T): T {
   try {

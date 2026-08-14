@@ -4,6 +4,7 @@
  * 1. New project → paste this file → Save
  * 2. Project Settings → Script properties:
  *    - YELP_API_KEY (optional, recommended): https://www.yelp.com/developers
+ *    - GOOGLE_PLACES_API_KEY (optional): server-side Google Places; client may also pass googleKey
  * 3. Deploy → New deployment → Web app
  *    - Execute as: Me
  *    - Who has access: Anyone
@@ -19,6 +20,7 @@ function doGet(e) {
   var lon = parseFloat(p.lon);
   var callback = p.callback;
   var wantDishes = p.dishes === '1' || p.dishes === 'true';
+  var googleKey = String(p.googleKey || '');
 
   var result;
   try {
@@ -26,8 +28,10 @@ function doGet(e) {
       result = fetchYelp_(name, city, lat, lon, wantDishes);
     } else if (source === 'tripadvisor') {
       result = fetchTripAdvisor_(name, city);
+    } else if (source === 'google') {
+      result = fetchGoogle_(name, city, lat, lon, googleKey);
     } else {
-      result = { error: 'Unknown source. Use yelp or tripadvisor.' };
+      result = { error: 'Unknown source. Use yelp, tripadvisor, or google.' };
     }
   } catch (err) {
     result = { error: String(err), rating: null, reviewCount: null, url: null };
@@ -89,11 +93,13 @@ function fetchYelp_(name, city, lat, lon, wantDishes) {
   }).getContentText();
   var ratingMatch = html.match(/"rating":\s*(\d+(?:\.\d+)?)/);
   var countMatch = html.match(/"reviewCount":\s*(\d+)/);
+  var priceMatch = html.match(/"price":\s*"(\$+)"/);
   var bizMatch = html.match(/href="(\/biz\/[^"?]+)/);
   var out = {
     rating: ratingMatch ? Number(ratingMatch[1]) : null,
     reviewCount: countMatch ? Number(countMatch[1]) : null,
     url: bizMatch ? 'https://www.yelp.com' + bizMatch[1] : searchUrl,
+    price: priceMatch ? priceMatch[1] : null,
   };
   if (wantDishes) {
     out.dishes = parseYelpDishesFromHtml_(html);
@@ -156,6 +162,71 @@ function parseYelpDishesFromHtml_(html) {
     if (dishes.indexOf(m2[1]) === -1) dishes.push(m2[1]);
   }
   return dishes.slice(0, 3);
+}
+
+function fetchGoogle_(name, city, lat, lon, clientKey) {
+  var props = PropertiesService.getScriptProperties();
+  var apiKey = clientKey || props.getProperty('GOOGLE_PLACES_API_KEY');
+  var fallbackUrl =
+    'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(name + ' ' + city);
+  if (!apiKey) {
+    return {
+      error: 'Google Places key missing — pass googleKey or set GOOGLE_PLACES_API_KEY',
+      rating: null,
+      reviewCount: null,
+      url: fallbackUrl,
+      priceLevel: null,
+    };
+  }
+
+  var body = {
+    textQuery: (name + ' ' + city).trim(),
+    maxResultCount: 1,
+  };
+  if (!isNaN(lat) && !isNaN(lon)) {
+    body.locationBias = {
+      circle: {
+        center: { latitude: lat, longitude: lon },
+        radius: 500,
+      },
+    };
+  }
+
+  var resp = UrlFetchApp.fetch('https://places.googleapis.com/v1/places:searchText', {
+    method: 'post',
+    contentType: 'application/json',
+    headers: {
+      'X-Goog-Api-Key': apiKey,
+      'X-Goog-FieldMask':
+        'places.displayName,places.rating,places.userRatingCount,places.googleMapsUri,places.priceLevel',
+    },
+    payload: JSON.stringify(body),
+    muteHttpExceptions: true,
+  });
+
+  if (resp.getResponseCode() !== 200) {
+    return {
+      error: 'Google Places ' + resp.getResponseCode(),
+      rating: null,
+      reviewCount: null,
+      url: fallbackUrl,
+      priceLevel: null,
+    };
+  }
+
+  var data = JSON.parse(resp.getContentText());
+  var hit = data.places && data.places[0];
+  if (!hit) {
+    return { rating: null, reviewCount: null, url: fallbackUrl, priceLevel: null };
+  }
+
+  return {
+    rating: hit.rating != null ? hit.rating : null,
+    reviewCount: hit.userRatingCount != null ? hit.userRatingCount : null,
+    url: hit.googleMapsUri || fallbackUrl,
+    priceLevel: hit.priceLevel != null ? hit.priceLevel : null,
+    matchedName: hit.displayName && hit.displayName.text ? hit.displayName.text : null,
+  };
 }
 
 function fetchTripAdvisor_(name, city) {
