@@ -21,7 +21,7 @@ export function ResultsMap({ places, center }: Props) {
             key={p.id}
             center={[p.lat, p.lon]}
             radius={10}
-            pathOptions={{ color: '#e8c547', fillColor: '#3ecfac', fillOpacity: 0.85, weight: 2 }}
+            pathOptions={{ color: '#9a7b52', fillColor: '#b8956c', fillOpacity: 0.85, weight: 2 }}
           >
             <Popup>
               <strong>

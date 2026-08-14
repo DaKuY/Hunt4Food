@@ -1,5 +1,5 @@
 /**
- * OpenPlate ratings proxy — deploy at script.google.com
+ * Hunt4Food ratings proxy — deploy at script.google.com
  *
  * 1. New project → paste this file → Save
  * 2. Project Settings → Script properties:
@@ -89,7 +89,7 @@ function fetchYelp_(name, city, lat, lon, wantDishes) {
   // Scrape fallback (may fail if Yelp blocks datacenter IP)
   var html = UrlFetchApp.fetch(searchUrl, {
     muteHttpExceptions: true,
-    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; OpenPlate/1.0)' },
+    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Hunt4Food/1.0)' },
   }).getContentText();
   var ratingMatch = html.match(/"rating":\s*(\d+(?:\.\d+)?)/);
   var countMatch = html.match(/"reviewCount":\s*(\d+)/);
@@ -125,7 +125,7 @@ function fetchYelpDishes_(bizId, bizUrl, apiKey) {
     try {
       var html = UrlFetchApp.fetch(bizUrl, {
         muteHttpExceptions: true,
-        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; OpenPlate/1.0)' },
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Hunt4Food/1.0)' },
         followRedirects: true,
       }).getContentText();
       var dishes = parseYelpDishesFromHtml_(html);

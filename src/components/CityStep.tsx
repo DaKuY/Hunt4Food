@@ -277,7 +277,7 @@ export function CityStep({ onConfirm, initial }: Props) {
           {rectBounds && (
             <Rectangle
               bounds={rectBounds}
-              pathOptions={{ color: '#e8c547', weight: 2, fillOpacity: 0.08 }}
+              pathOptions={{ color: '#9a7b52', weight: 2, fillOpacity: 0.08 }}
             />
           )}
         </MapContainer>

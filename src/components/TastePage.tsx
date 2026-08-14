@@ -45,7 +45,7 @@ export function TastePage({ taste, onTasteChange, shortlist, onClearShortlist, s
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = 'openplate-taste.json'
+    a.download = 'hunt4food-taste.json'
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -74,7 +74,7 @@ export function TastePage({ taste, onTasteChange, shortlist, onClearShortlist, s
     <section className="step taste-page">
       <header className="step-header">
         <p className="eyebrow">My Taste</p>
-        <h2>Teach OpenPlate what you like</h2>
+        <h2>Teach Hunt4Food what you like</h2>
         <p className="lede">
           Everything stays in this browser. Export the JSON to move phones — or paste it into Cursor later
           so recommendations can be tuned from your real history.
