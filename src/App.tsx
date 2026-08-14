@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { HashRouter, Link, Navigate, Route, Routes, useNavigate, useSearchParams } from 'react-router-dom'
 import { cuisineById } from './data/cuisines'
 import { pruneExpiredCache } from './lib/storage'
@@ -23,6 +23,23 @@ import './App.css'
 const CityStep = lazy(() =>
   import('./components/CityStep').then((m) => ({ default: m.CityStep })),
 )
+
+function cityFromParams(params: URLSearchParams): CitySelection | null {
+  const label = params.get('city')
+  const lat = Number(params.get('lat'))
+  const lon = Number(params.get('lon'))
+  const south = Number(params.get('south'))
+  const west = Number(params.get('west'))
+  const north = Number(params.get('north'))
+  const east = Number(params.get('east'))
+  if (!label || ![lat, lon, south, west, north, east].every((n) => Number.isFinite(n))) return null
+  return {
+    label,
+    center: { lat, lon },
+    bounds: { south, west, north, east },
+    source: 'search',
+  }
+}
 
 function useTaste() {
   const [taste, setTaste] = useState<TasteProfile>(() => loadTaste())
@@ -54,55 +71,63 @@ function Home() {
 function SearchFlow() {
   const [params, setParams] = useSearchParams()
   const { taste, setTaste } = useTaste()
-  const [step, setStep] = useState<'city' | 'cuisine' | 'results'>('city')
-  const [city, setCity] = useState<CitySelection | null>(null)
-  const [cuisines, setCuisines] = useState<CuisineId[]>([])
-  const [dietary, setDietary] = useState<DietaryId[]>(taste.dietaryPrefs)
+  const restored = cityFromParams(params)
+  const [step, setStep] = useState<'city' | 'cuisine' | 'results'>(() => (restored ? 'cuisine' : 'city'))
+  const [city, setCity] = useState<CitySelection | null>(() => restored)
+  const [cuisines, setCuisines] = useState<CuisineId[]>(() => {
+    const c = params.get('cuisines')
+    if (!c) return []
+    return c.split(',').filter(Boolean).slice(0, 3) as CuisineId[]
+  })
+  const [dietary, setDietary] = useState<DietaryId[]>(() => {
+    const d = params.get('dietary')
+    if (d) return d.split(',').filter(Boolean) as DietaryId[]
+    return taste.dietaryPrefs
+  })
   const [places, setPlaces] = useState<RankedRestaurant[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [openNowOnly, setOpenNowOnly] = useState(false)
   const [hasWebsiteOnly, setHasWebsiteOnly] = useState(false)
   const [shortlist, setShortlist] = useState<ShortlistItem[]>(() => loadShortlist())
+  const searchAbortRef = useRef<AbortController | null>(null)
+  const tasteRef = useRef(taste)
+  tasteRef.current = taste
 
-  // Restore from URL when possible
   useEffect(() => {
-    const c = params.get('cuisines')
-    if (c) {
-      const ids = c.split(',').filter(Boolean) as CuisineId[]
-      if (ids.length) setCuisines(ids.slice(0, 3))
+    return () => {
+      searchAbortRef.current?.abort()
     }
-    const d = params.get('dietary')
-    if (d) setDietary(d.split(',').filter(Boolean) as DietaryId[])
-  }, [params])
+  }, [])
 
   const runSearch = useCallback(
-    async (selection: CitySelection, food: CuisineId[], diet: DietaryId[], signal: AbortSignal) => {
+    async (selection: CitySelection, food: CuisineId[], diet: DietaryId[]) => {
+      searchAbortRef.current?.abort()
+      const ctrl = new AbortController()
+      searchAbortRef.current = ctrl
       setLoading(true)
       setError(null)
       setStep('results')
       try {
-        const raw = await fetchRestaurants(selection.bounds, food, signal)
+        const raw = await fetchRestaurants(selection.bounds, food, ctrl.signal)
+        if (ctrl.signal.aborted) return
         const ranked = rankRestaurants(raw, {
           center: selection.center,
           selectedCuisines: food,
           dietary: diet,
-          taste,
+          taste: tasteRef.current,
           limit: 10,
         })
         setPlaces(ranked)
-        if (!ranked.length) {
-          setError(null)
-        }
       } catch (e) {
-        if ((e as Error).name === 'AbortError') return
+        if ((e as Error).name === 'AbortError' || ctrl.signal.aborted) return
         setError('Could not reach OpenStreetMap right now. Try again in a minute, or use Google / Yelp below.')
         setPlaces([])
       } finally {
-        setLoading(false)
+        if (!ctrl.signal.aborted) setLoading(false)
       }
     },
-    [taste],
+    [],
   )
 
   function confirmCity(selection: CitySelection) {
@@ -130,8 +155,7 @@ function SearchFlow() {
       next.set('dietary', dietary.join(','))
       return next
     })
-    const ctrl = new AbortController()
-    void runSearch(city, cuisines, dietary, ctrl.signal)
+    void runSearch(city, cuisines, dietary)
   }
 
   const cuisineLabels = useMemo(
