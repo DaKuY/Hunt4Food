@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.npm/
+.pnpm-store/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs / coverage / caches
+*.log
+logs/
+coverage/
+.coverage
+.cache/
+.turbo/
+.next/
+.nuxt/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Misc
+*.tmp
+*.temp
+.cursor/
+!/.cursor/environment.json
