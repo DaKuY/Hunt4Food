@@ -10,7 +10,7 @@ Find good restaurants in any city. Pick a place on the map, choose up to three c
 2. **Food** — pick up to 3 cuisines (+ optional dietary boosts)
 3. **Results** — top 10 from OpenStreetMap, with “why recommended,” **Google / Yelp / TripAdvisor ratings**, website/menu links
 4. **My Taste** — mark Loved it / Not for me; profile stays in your browser (export/import JSON to move devices)
-5. **Settings** — optional Google Places API key for reliable Google star ratings (Yelp/TripAdvisor load automatically when possible)
+5. **Settings** — Google Places API key override; Yelp/TripAdvisor proxy URL (required for those ratings)
 
 No accounts required for basic use. Data from OpenStreetMap via Photon + Overpass.
 
@@ -24,7 +24,13 @@ No accounts required for basic use. Data from OpenStreetMap via Photon + Overpas
 ### Ratings note
 
 - **Google**: Places Text Search via build-time secret or Settings override; hard daily/monthly caps
-- **Yelp & TripAdvisor**: best-effort public lookup (cached 7 days)
+- **Yelp & TripAdvisor**: require a free [Google Apps Script proxy](scripts/ratings-proxy/README.md) (browser scraping is blocked). Add `YELP_API_KEY` in Script properties for reliable Yelp stars.
+
+### Yelp / TripAdvisor setup (one-time)
+
+1. Deploy `scripts/ratings-proxy/Code.gs` at [script.google.com](https://script.google.com) (see [README](scripts/ratings-proxy/README.md))
+2. Add GitHub environment secret **`VITE_RATINGS_PROXY_URL`** = your `/exec` URL, **or** paste the URL in the app’s **Settings** page
+3. Optional: add **`YELP_API_KEY`** in Apps Script properties for Yelp Fusion (recommended)
 
 ## One-time GitHub Pages setup
 
@@ -51,7 +57,7 @@ Note: local preview uses base path `/restaurant-finder/`.
 ## Limits (honest)
 
 - OpenStreetMap coverage varies by city; thin areas show a Google/Yelp fallback
-- Review **scores** are not embedded (that needs paid APIs). Buttons open Google, Yelp, and TripAdvisor
+- Review **scores** from Yelp/TripAdvisor need the Apps Script proxy; Google uses Places API
 - Taste profiles are per-browser unless you export/import JSON
 - Be polite to public Overpass/Photon services — the app caches and throttles
 

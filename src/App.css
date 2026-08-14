@@ -451,6 +451,29 @@ main {
   border-radius: 12px;
 }
 
+.banner.warn {
+  background: rgba(255, 193, 77, 0.1);
+  border-color: rgba(255, 193, 77, 0.35);
+  color: #ffc14d;
+}
+
+.btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-top: 0.75rem;
+}
+
+.setup-steps {
+  margin: 0.75rem 0 0;
+  padding-left: 1.25rem;
+  line-height: 1.5;
+}
+
+.setup-steps li + li {
+  margin-top: 0.35rem;
+}
+
 .manual-add {
   margin: 1rem 0 1.5rem;
   padding: 1rem;
@@ -480,6 +503,11 @@ main {
 
 .rating-pill:hover {
   border-color: var(--accent-2);
+}
+
+.rating-pill--empty .rating-value {
+  color: var(--muted);
+  font-size: 0.85rem;
 }
 
 .rating-source {
