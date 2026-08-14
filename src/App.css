@@ -459,6 +459,54 @@ main {
   background: rgba(255, 255, 255, 0.03);
 }
 
+.ratings-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin: 0.5rem 0 0.65rem;
+}
+
+.rating-pill {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04);
+  text-decoration: none;
+  min-width: 4.5rem;
+}
+
+.rating-pill:hover {
+  border-color: var(--accent-2);
+}
+
+.rating-source {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.rating-value {
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--accent);
+  font-size: 0.95rem;
+}
+
+.muted.small {
+  font-size: 0.85rem;
+  margin: 0.5rem 0 1rem;
+}
+
+.muted.small code {
+  font-size: 0.8rem;
+  color: var(--accent-2);
+}
+
 .site-footer {
   width: min(920px, calc(100% - 2rem));
   margin: 0 auto;

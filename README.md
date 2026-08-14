@@ -8,10 +8,16 @@ Find good restaurants in any city. Pick a place on the map, choose up to three c
 
 1. **City** — type a name or zoom the map to a neighborhood
 2. **Food** — pick up to 3 cuisines (+ optional dietary boosts)
-3. **Results** — top 10 from OpenStreetMap, with “why recommended,” website/menu links, and review deep links
+3. **Results** — top 10 from OpenStreetMap, with “why recommended,” **Google / Yelp / TripAdvisor ratings**, website/menu links
 4. **My Taste** — mark Loved it / Not for me; profile stays in your browser (export/import JSON to move devices)
+5. **Settings** — optional Google Places API key for reliable Google star ratings (Yelp/TripAdvisor load automatically when possible)
 
-No API keys. No extra accounts. Data from OpenStreetMap via Photon + Overpass.
+No accounts required for basic use. Data from OpenStreetMap via Photon + Overpass.
+
+### Ratings note
+
+- **Google**: add a free [Places API key](https://console.cloud.google.com/google/maps-apis/) in **Settings** (or `VITE_GOOGLE_PLACES_API_KEY` at build time)
+- **Yelp & TripAdvisor**: fetched automatically via public lookups (best-effort; may show — when blocked)
 
 ## One-time GitHub Pages setup
 

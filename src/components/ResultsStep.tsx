@@ -6,8 +6,10 @@ import {
   tripadvisorUrl,
   yelpUrl,
 } from '../lib/links'
+import type { PlaceRatings } from '../lib/ratings'
 import { isProbablyOpenNow } from '../lib/rank'
 import type { RankedRestaurant } from '../lib/types'
+import { RatingsRow } from './RatingsRow'
 
 const ResultsMap = lazy(() =>
   import('./ResultsMap').then((m) => ({ default: m.ResultsMap })),
@@ -22,11 +24,16 @@ type Props = {
   error: string | null
   openNowOnly: boolean
   hasWebsiteOnly: boolean
+  ratingsMap: Record<string, PlaceRatings>
+  ratingsLoading: boolean
   onToggleOpenNow: () => void
   onToggleWebsite: () => void
   onLove: (place: RankedRestaurant) => void
   onSkip: (place: RankedRestaurant) => void
   onShortlist: (place: RankedRestaurant) => void
+  onRetry: () => void
+  onCopySearchLink: () => void
+  shareMessage: string | null
   shortlistedIds: Set<string>
   lovedIds: Set<string>
   onBack: () => void
@@ -42,11 +49,16 @@ export function ResultsStep({
   error,
   openNowOnly,
   hasWebsiteOnly,
+  ratingsMap,
+  ratingsLoading,
   onToggleOpenNow,
   onToggleWebsite,
   onLove,
   onSkip,
   onShortlist,
+  onRetry,
+  onCopySearchLink,
+  shareMessage,
   shortlistedIds,
   lovedIds,
   onBack,
@@ -57,7 +69,6 @@ export function ResultsStep({
     if (openNowOnly) {
       const open = isProbablyOpenNow(p.openingHours)
       if (open === false) return false
-      // null (unknown) still shown when filter on — only hide known-closed
     }
     return true
   })
@@ -70,10 +81,12 @@ export function ResultsStep({
         <p className="eyebrow">Your top picks · {cityLabel}</p>
         <h2>Ten places worth checking</h2>
         <p className="lede">
-          Ranked from OpenStreetMap for your area and taste. Open Google, Yelp, or TripAdvisor for live
-          reviews.
+          Ranked from OpenStreetMap for your area and taste. Ratings from Google, Yelp, and TripAdvisor
+          load below each place.
         </p>
       </header>
+
+      {shareMessage && <p className="banner">{shareMessage}</p>}
 
       <div className="filters chip-row wrap">
         <button type="button" className={`chip ghost ${openNowOnly ? 'on' : ''}`} onClick={onToggleOpenNow}>
@@ -85,6 +98,9 @@ export function ResultsStep({
           onClick={onToggleWebsite}
         >
           Has website
+        </button>
+        <button type="button" className="chip ghost" onClick={onCopySearchLink}>
+          Copy search link
         </button>
       </div>
 
@@ -100,12 +116,18 @@ export function ResultsStep({
       {error && !loading && (
         <div className="empty-state">
           <p>{error}</p>
-          <div className="chip-row">
-            <a className="btn primary" href={fallback.google} target="_blank" rel="noreferrer">
-              Search Google Maps
+          <div className="chip-row wrap">
+            <button type="button" className="btn primary" onClick={onRetry}>
+              Try again
+            </button>
+            <a className="btn ghost" href={fallback.google} target="_blank" rel="noreferrer">
+              Google Maps
             </a>
             <a className="btn ghost" href={fallback.yelp} target="_blank" rel="noreferrer">
-              Search Yelp
+              Yelp
+            </a>
+            <a className="btn ghost" href={fallback.tripadvisor} target="_blank" rel="noreferrer">
+              TripAdvisor
             </a>
           </div>
         </div>
@@ -115,14 +137,17 @@ export function ResultsStep({
         <div className="empty-state">
           <p>
             Map data looks thin here for those cuisines. Zoom to a denser neighborhood, try different
-            food types, or jump to Google / Yelp for this city.
+            food types, or jump to Google / Yelp / TripAdvisor for this city.
           </p>
-          <div className="chip-row">
+          <div className="chip-row wrap">
             <a className="btn primary" href={fallback.google} target="_blank" rel="noreferrer">
-              Google: {cuisineLabels.join(', ')} in {cityLabel}
+              Google
             </a>
             <a className="btn ghost" href={fallback.yelp} target="_blank" rel="noreferrer">
-              Yelp search
+              Yelp
+            </a>
+            <a className="btn ghost" href={fallback.tripadvisor} target="_blank" rel="noreferrer">
+              TripAdvisor
             </a>
           </div>
         </div>
@@ -137,6 +162,7 @@ export function ResultsStep({
       <ol className="result-list">
         {filtered.map((place, index) => {
           const menu = menuOrWebsiteUrl(place, cityLabel)
+          const ratings = ratingsMap[place.id] ?? null
           return (
             <li key={place.id} className="result-card">
               <div className="result-rank">{index + 1}</div>
@@ -146,7 +172,14 @@ export function ResultsStep({
                   {place.cuisines.slice(0, 3).join(' · ') || place.amenity || 'Restaurant'}
                   {place.distanceKm < 50 ? ` · ${place.distanceKm.toFixed(1)} km` : ''}
                   {place.address ? ` · ${place.address}` : ''}
+                  {place.phone ? (
+                    <>
+                      {' · '}
+                      <a href={`tel:${place.phone.replace(/\s/g, '')}`}>{place.phone}</a>
+                    </>
+                  ) : null}
                 </p>
+                <RatingsRow ratings={ratings} loading={ratingsLoading && !ratings} />
                 <ul className="reasons">
                   {place.reasons.map((r) => (
                     <li key={r}>{r}</li>
