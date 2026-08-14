@@ -1,5 +1,6 @@
 import { googleMapsUrl, tripadvisorUrl, yelpUrl } from './links'
 import { consumeGoogleQuota, getGoogleQuota, googleQuotaMessage } from './googleQuota'
+import { jsonpGet, ratingsProxyUrl } from './ratingsProxy'
 import { readCache, writeCache } from './storage'
 import { loadSettings } from './settings'
 import type { Restaurant } from './types'
@@ -86,88 +87,49 @@ async function fetchGooglePlacesRating(
   }
 }
 
-/** Fetch HTML via public CORS proxy (best-effort for Yelp / TripAdvisor). */
-async function fetchHtml(url: string, signal?: AbortSignal): Promise<string> {
-  const proxy = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`
-  const res = await fetch(proxy, { signal })
-  if (!res.ok) throw new Error(`Proxy ${res.status}`)
-  const data = (await res.json()) as { contents?: string }
-  if (!data.contents) throw new Error('Empty proxy response')
-  return data.contents
-}
-
-function parseJsonLdRating(html: string): { rating: number | null; count: number | null } {
-  const blocks = html.match(/<script type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi) ?? []
-  for (const block of blocks) {
-    const inner = block.replace(/<script[^>]*>|<\/script>/gi, '')
-    try {
-      const json = JSON.parse(inner) as Record<string, unknown>
-      const items = Array.isArray(json) ? json : [json]
-      for (const item of items) {
-        const agg = item.aggregateRating as { ratingValue?: number | string; reviewCount?: number | string } | undefined
-        if (agg?.ratingValue != null) {
-          return {
-            rating: Number(agg.ratingValue),
-            count: agg.reviewCount != null ? Number(agg.reviewCount) : null,
-          }
-        }
-      }
-    } catch {
-      // next block
-    }
+/** Fetch Yelp / TripAdvisor via Google Apps Script proxy (browser scraping is blocked). */
+async function fetchProxyRating(
+  source: 'yelp' | 'tripadvisor',
+  place: Restaurant,
+  cityLabel: string,
+): Promise<Pick<SourceRating, 'rating' | 'reviewCount' | 'url'>> {
+  const proxy = ratingsProxyUrl()
+  const fallbackUrl = source === 'yelp' ? yelpUrl(place, cityLabel) : tripadvisorUrl(place, cityLabel)
+  if (!proxy) {
+    throw new Error('Ratings proxy not configured')
   }
-  return { rating: null, count: null }
-}
-
-function parseYelpInline(html: string): { rating: number | null; count: number | null } {
-  const mRating = html.match(/"rating":\s*(\d+(?:\.\d+)?)/)
-  const mCount = html.match(/"reviewCount":\s*(\d+)/)
-  if (mRating) {
-    return { rating: Number(mRating[1]), count: mCount ? Number(mCount[1]) : null }
+  const data = await jsonpGet<{ rating?: number | null; reviewCount?: number | null; url?: string; error?: string }>(
+    proxy,
+    {
+      source,
+      name: place.name,
+      city: cityLabel,
+      lat: String(place.lat),
+      lon: String(place.lon),
+    },
+  )
+  if (data.error && data.rating == null) throw new Error(data.error)
+  return {
+    rating: data.rating ?? null,
+    reviewCount: data.reviewCount ?? null,
+    url: data.url || fallbackUrl,
   }
-  return parseJsonLdRating(html)
-}
-
-function parseTripAdvisorInline(html: string): { rating: number | null; count: number | null } {
-  const mBubble = html.match(/bubble_rating rating-(\d+)/)
-  if (mBubble) {
-    const rating = Number(mBubble[1]) / 10
-    const mCount = html.match(/(\d[\d,]*)\s+reviews/i)
-    return { rating, count: mCount ? Number(mCount[1].replace(/,/g, '')) : null }
-  }
-  const mJson = html.match(/"rating":\s*(\d+(?:\.\d+)?)/)
-  const mCount = html.match(/"num_reviews":\s*(\d+)/)
-  if (mJson) {
-    return { rating: Number(mJson[1]), count: mCount ? Number(mCount[1]) : null }
-  }
-  return parseJsonLdRating(html)
 }
 
 async function fetchYelpRating(
   place: Restaurant,
   cityLabel: string,
-  signal?: AbortSignal,
+  _signal?: AbortSignal,
 ): Promise<Pick<SourceRating, 'rating' | 'reviewCount' | 'url'>> {
-  const searchUrl = yelpUrl(place, cityLabel)
-  const html = await fetchHtml(searchUrl, signal)
-  const { rating, count } = parseYelpInline(html)
-  // Try to find first biz link for a cleaner URL
-  const biz = html.match(/href="(\/biz\/[^"?]+)/)
-  const url = biz ? `https://www.yelp.com${biz[1]}` : searchUrl
-  return { rating, reviewCount: count, url }
+  return fetchProxyRating('yelp', place, cityLabel)
 }
 
 async function fetchTripAdvisorRating(
   place: Restaurant,
   cityLabel: string,
-  signal?: AbortSignal,
+  _signal?: AbortSignal,
 ): Promise<Pick<SourceRating, 'rating' | 'reviewCount' | 'url'>> {
-  const searchUrl = tripadvisorUrl(place, cityLabel)
-  const html = await fetchHtml(searchUrl, signal)
-  const { rating, count } = parseTripAdvisorInline(html)
-  const loc = html.match(/href="(https:\/\/www\.tripadvisor\.com\/Restaurant_Review[^"]+)"/)
-  const url = loc?.[1]?.replace(/&amp;/g, '&') ?? searchUrl
-  return { rating, reviewCount: count, url }
+  return fetchProxyRating('tripadvisor', place, cityLabel)
 }
 
 export async function fetchPlaceRatings(
@@ -218,7 +180,7 @@ export async function fetchPlaceRatings(
         writeCache(ck, result, CACHE_TTL)
         return result
       } catch {
-        return { ...base.yelp, error: 'Yelp rating unavailable' }
+        return { ...base.yelp, error: ratingsProxyUrl() ? 'Yelp rating unavailable' : 'Deploy ratings proxy (see Settings)' }
       }
     })(),
     (async () => {
@@ -231,7 +193,10 @@ export async function fetchPlaceRatings(
         writeCache(ck, result, CACHE_TTL)
         return result
       } catch {
-        return { ...base.tripadvisor, error: 'TripAdvisor rating unavailable' }
+        return {
+          ...base.tripadvisor,
+          error: ratingsProxyUrl() ? 'TripAdvisor rating unavailable' : 'Deploy ratings proxy (see Settings)',
+        }
       }
     })(),
   ])

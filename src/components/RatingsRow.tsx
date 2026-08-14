@@ -25,14 +25,16 @@ export function RatingsRow({ ratings, loading }: Props) {
         return (
           <a
             key={key}
-            className="rating-pill"
+            className={`rating-pill${r.rating == null ? ' rating-pill--empty' : ''}`}
             href={r.url}
             target="_blank"
             rel="noreferrer"
-            title={r.error ?? `Open ${LABELS[key]}`}
+            title={r.error ?? (r.rating != null ? `Open ${LABELS[key]}` : `Open ${LABELS[key]} (rating unavailable)`)}
           >
             <span className="rating-source">{LABELS[key]}</span>
-            <span className="rating-value">{formatRating(r)}</span>
+            <span className="rating-value">
+              {r.rating != null ? formatRating(r) : r.error?.includes('proxy') ? 'Setup' : '—'}
+            </span>
           </a>
         )
       })}
