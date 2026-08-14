@@ -3,6 +3,7 @@ import { consumeGoogleQuota, getGoogleQuota, googleQuotaMessage } from './google
 import { jsonpGet, ratingsProxyUrl } from './ratingsProxy'
 import { cacheTtlUntilEndOfUtcDay, readCache, utcDayKey, writeCache } from './storage'
 import { loadSettings } from './settings'
+import { fetchTripAdvisorViaDdg } from './tripadvisor'
 import type { Restaurant } from './types'
 
 export { getGoogleQuota, googleQuotaMessage } from './googleQuota'
@@ -22,7 +23,7 @@ export type PlaceRatings = {
   tripadvisor: SourceRating
 }
 
-const CACHE_VERSION = 'v3'
+const CACHE_VERSION = 'v4'
 
 function cacheKey(place: Restaurant, cityLabel: string, source: string): string {
   return `rating:${CACHE_VERSION}:${utcDayKey()}:${source}:${place.id}:${cityLabel.slice(0, 40)}`
@@ -230,7 +231,19 @@ async function resolveProxyRating(
 
   try {
     const data = await fetchProxyRating(source, place, cityLabel)
-    const result: SourceRating = { ...base, ...data }
+    let result: SourceRating = { ...base, ...data }
+
+    if (source === 'tripadvisor' && result.rating == null && !signal?.aborted) {
+      try {
+        const ddg = await fetchTripAdvisorViaDdg(place, cityLabel, signal)
+        if (ddg.rating != null) {
+          result = { ...base, rating: ddg.rating, reviewCount: ddg.reviewCount, url: ddg.url }
+        }
+      } catch {
+        // keep proxy result
+      }
+    }
+
     writeSourceCache(place, cityLabel, source, result)
     return result
   } catch {
