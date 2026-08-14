@@ -4,12 +4,11 @@ import type { MapBounds, Restaurant } from './types'
 const MIRRORS = [
   'https://overpass.kumi.systems/api/interpreter',
   'https://overpass-api.de/api/interpreter',
-  'https://overpass.private.coffee/api/interpreter',
-  'https://overpass.nchc.org.tw/api/interpreter',
+  'https://overpass.osm.jp/api/interpreter',
 ]
 
 const CACHE_TTL_MS = 1000 * 60 * 60 * 12 // 12 hours
-const MIRROR_TIMEOUT_MS = 8000
+const MIRROR_TIMEOUT_MS = 7000
 const RESULT_CAP = 300
 
 type OverpassElement = {
@@ -25,7 +24,7 @@ function buildAreaQuery(bounds: MapBounds): string {
   const { south, west, north, east } = bounds
   const bbox = `${south},${west},${north},${east}`
   return `
-[out:json][timeout:10];
+[out:json][timeout:8];
 nwr["amenity"~"^(restaurant|cafe|fast_food|ice_cream|food_court)$"](${bbox});
 out center tags ${RESULT_CAP};
 `.trim()
@@ -88,18 +87,13 @@ function cacheKey(bounds: MapBounds): string {
   const b = [bounds.south, bounds.west, bounds.north, bounds.east]
     .map((n) => n.toFixed(3))
     .join(',')
-  return `overpass:v3:area:${b}`
+  return `overpass:v4:area:${b}`
 }
 
-async function fetchMirror(
-  mirror: string,
-  query: string,
-  signal?: AbortSignal,
-): Promise<Restaurant[]> {
+async function fetchMirror(mirror: string, query: string, signal?: AbortSignal): Promise<Restaurant[]> {
   const controller = new AbortController()
   const onAbort = () => controller.abort()
   signal?.addEventListener('abort', onAbort)
-
   const timer = setTimeout(() => controller.abort(), MIRROR_TIMEOUT_MS)
   try {
     const res = await fetch(mirror, {
@@ -113,7 +107,9 @@ async function fetchMirror(
     const places = (data.elements ?? [])
       .map(elementToRestaurant)
       .filter((p): p is Restaurant => p != null)
-    return dedupe(places)
+    const unique = dedupe(places)
+    if (!unique.length) throw new Error(`Empty Overpass result @ ${mirror}`)
+    return unique
   } finally {
     clearTimeout(timer)
     signal?.removeEventListener('abort', onAbort)
@@ -127,39 +123,7 @@ export async function fetchRestaurants(bounds: MapBounds, signal?: AbortSignal):
   if (cached?.length) return cached
 
   const query = buildAreaQuery(bounds)
-  const raceCtrl = new AbortController()
-  const onAbort = () => raceCtrl.abort()
-  signal?.addEventListener('abort', onAbort)
-
-  try {
-    const places = await new Promise<Restaurant[]>((resolve, reject) => {
-      let pending = MIRRORS.length
-      let settled = false
-      for (const mirror of MIRRORS) {
-        void fetchMirror(mirror, query, raceCtrl.signal)
-          .then((result) => {
-            if (settled || result.length === 0) {
-              pending -= 1
-              if (result.length === 0 && pending === 0 && !settled) {
-                resolve([])
-              }
-              return
-            }
-            settled = true
-            raceCtrl.abort()
-            resolve(result)
-          })
-          .catch((err) => {
-            pending -= 1
-            if (pending === 0 && !settled) {
-              reject(err instanceof Error ? err : new Error('All Overpass mirrors failed'))
-            }
-          })
-      }
-    })
-    if (places.length) writeCache(key, places, CACHE_TTL_MS)
-    return places
-  } finally {
-    signal?.removeEventListener('abort', onAbort)
-  }
+  const places = await Promise.any(MIRRORS.map((mirror) => fetchMirror(mirror, query, signal)))
+  writeCache(key, places, CACHE_TTL_MS)
+  return places
 }

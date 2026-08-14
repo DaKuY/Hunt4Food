@@ -289,17 +289,11 @@ async function resolveGoogleRating(
       return result
     } catch (e) {
       if (signal?.aborted) return base
-      // Referrer-blocked keys fall through to the Apps Script proxy
-      const blocked = (e as Error).message.includes('403')
-      if (!blocked && ratingsProxyUrl() === '') {
-        const result: SourceRating = { ...base, error: 'Google rating unavailable' }
-        writeSourceCache(place, cityLabel, 'google', result)
-        return result
-      }
+      // Same referrer-locked key will also fail/hang on the proxy — skip it.
     }
   }
 
-  if (ratingsProxyUrl()) {
+  if (ratingsProxyUrl() && !settings.googlePlacesApiKey) {
     try {
       const data = await fetchProxyRating('google', place, cityLabel)
       const result: SourceRating = { ...base, ...data }
