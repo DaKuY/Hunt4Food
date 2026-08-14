@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import {
   cityCuisineFallbackLinks,
   googleMapsUrl,
@@ -92,6 +92,16 @@ export function ResultsStep({
 
   const favoriteCount = places.filter((p) => favoriteIds.has(p.id)).length
   const fallback = cityCuisineFallbackLinks(cityLabel, cuisineLabels)
+  const [mapReady, setMapReady] = useState(false)
+
+  useEffect(() => {
+    if (loading || filtered.length === 0) {
+      setMapReady(false)
+      return
+    }
+    const id = window.setTimeout(() => setMapReady(true), 0)
+    return () => window.clearTimeout(id)
+  }, [loading, filtered.length])
 
   return (
     <section className="step results-step">
@@ -176,8 +186,8 @@ export function ResultsStep({
         </div>
       )}
 
-      {!loading && !error && filtered.length > 0 && (
-        <Suspense fallback={<p className="muted">Loading map…</p>}>
+      {!loading && !error && filtered.length > 0 && mapReady && (
+        <Suspense fallback={null}>
           <ResultsMap places={filtered} center={cityCenter} />
         </Suspense>
       )}

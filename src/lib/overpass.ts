@@ -1,14 +1,16 @@
-import { cuisineById } from '../data/cuisines'
 import { readCache, writeCache } from './storage'
-import type { CuisineId, MapBounds, Restaurant } from './types'
+import type { MapBounds, Restaurant } from './types'
 
 const MIRRORS = [
-  'https://overpass-api.de/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
   'https://overpass.nchc.org.tw/api/interpreter',
 ]
 
 const CACHE_TTL_MS = 1000 * 60 * 60 * 12 // 12 hours
+const MIRROR_TIMEOUT_MS = 8000
+const RESULT_CAP = 300
 
 type OverpassElement = {
   type: string
@@ -19,39 +21,14 @@ type OverpassElement = {
   tags?: Record<string, string>
 }
 
-function buildQuery(bounds: MapBounds, cuisines: CuisineId[]): string {
+function buildAreaQuery(bounds: MapBounds): string {
   const { south, west, north, east } = bounds
   const bbox = `${south},${west},${north},${east}`
-  const tags = Array.from(
-    new Set(cuisines.flatMap((id) => cuisineById(id).osmTags)),
-  )
-
-  const cuisineRegex = tags.map(escapeRegex).join('|')
-  // Also catch smoothie/healthy via amenity/cuisine loosely
-  const amenityFilter = '["amenity"~"^(restaurant|cafe|fast_food|ice_cream|food_court)$"]'
-
-  const cuisineClause =
-    cuisineRegex.length > 0
-      ? `["cuisine"~"${cuisineRegex}",i]`
-      : ''
-
-  // Broader name/cuisine keyword match for smoothie & healthy
-  const keywordBits = cuisines.flatMap((id) => cuisineById(id).keywords)
-  const nameRegex = Array.from(new Set(keywordBits)).map(escapeRegex).join('|')
-
   return `
-[out:json][timeout:18];
-(
-  nwr${amenityFilter}${cuisineClause}(${bbox});
-  nwr${amenityFilter}["name"~"${nameRegex}",i](${bbox});
-  nwr["cuisine"~"${cuisineRegex}",i](${bbox});
-);
-out center tags;
+[out:json][timeout:10];
+nwr["amenity"~"^(restaurant|cafe|fast_food|ice_cream|food_court)$"](${bbox});
+out center tags ${RESULT_CAP};
 `.trim()
-}
-
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 function elementToRestaurant(el: OverpassElement): Restaurant | null {
@@ -100,7 +77,6 @@ function dedupe(places: Restaurant[]): Restaurant[] {
       seen.set(key, p)
       continue
     }
-    // Prefer richer tags
     const score = (r: Restaurant) =>
       [r.website, r.phone, r.address, r.openingHours, r.cuisineRaw].filter(Boolean).length
     if (score(p) > score(existing)) seen.set(key, p)
@@ -108,11 +84,11 @@ function dedupe(places: Restaurant[]): Restaurant[] {
   return Array.from(seen.values())
 }
 
-function cacheKey(bounds: MapBounds, cuisines: CuisineId[]): string {
+function cacheKey(bounds: MapBounds): string {
   const b = [bounds.south, bounds.west, bounds.north, bounds.east]
     .map((n) => n.toFixed(3))
     .join(',')
-  return `overpass:v2:${b}:${[...cuisines].sort().join('+')}`
+  return `overpass:v3:area:${b}`
 }
 
 async function fetchMirror(
@@ -124,7 +100,7 @@ async function fetchMirror(
   const onAbort = () => controller.abort()
   signal?.addEventListener('abort', onAbort)
 
-  const timer = setTimeout(() => controller.abort(), 10000)
+  const timer = setTimeout(() => controller.abort(), MIRROR_TIMEOUT_MS)
   try {
     const res = await fetch(mirror, {
       method: 'POST',
@@ -144,16 +120,13 @@ async function fetchMirror(
   }
 }
 
-export async function fetchRestaurants(
-  bounds: MapBounds,
-  cuisines: CuisineId[],
-  signal?: AbortSignal,
-): Promise<Restaurant[]> {
-  const key = cacheKey(bounds, cuisines)
+/** All mapped restaurants/cafes in the visible area. Cuisine ranking happens client-side. */
+export async function fetchRestaurants(bounds: MapBounds, signal?: AbortSignal): Promise<Restaurant[]> {
+  const key = cacheKey(bounds)
   const cached = readCache<Restaurant[]>(key)
-  if (cached) return cached
+  if (cached?.length) return cached
 
-  const query = buildQuery(bounds, cuisines)
+  const query = buildAreaQuery(bounds)
   const raceCtrl = new AbortController()
   const onAbort = () => raceCtrl.abort()
   signal?.addEventListener('abort', onAbort)
@@ -165,7 +138,13 @@ export async function fetchRestaurants(
       for (const mirror of MIRRORS) {
         void fetchMirror(mirror, query, raceCtrl.signal)
           .then((result) => {
-            if (settled) return
+            if (settled || result.length === 0) {
+              pending -= 1
+              if (result.length === 0 && pending === 0 && !settled) {
+                resolve([])
+              }
+              return
+            }
             settled = true
             raceCtrl.abort()
             resolve(result)
@@ -178,7 +157,7 @@ export async function fetchRestaurants(
           })
       }
     })
-    writeCache(key, places, CACHE_TTL_MS)
+    if (places.length) writeCache(key, places, CACHE_TTL_MS)
     return places
   } finally {
     signal?.removeEventListener('abort', onAbort)

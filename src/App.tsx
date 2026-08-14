@@ -88,6 +88,8 @@ function SearchFlow() {
   const [shortlist, setShortlist] = useState<ShortlistItem[]>(() => loadShortlist())
   const [shareMessage, setShareMessage] = useState<string | null>(null)
   const searchAbortRef = useRef<AbortController | null>(null)
+  const prefetchPromiseRef = useRef<Promise<Restaurant[]> | null>(null)
+  const poolRef = useRef<Restaurant[]>([])
   const autoRanRef = useRef(false)
   const seedOilBoostRef = useRef(false)
   const tasteRef = useRef(taste)
@@ -140,20 +142,17 @@ function SearchFlow() {
 
   const runSearch = useCallback(
     async (selection: CitySelection, food: CuisineId[], dietaryPrefs: DietaryId[]) => {
-      searchAbortRef.current?.abort()
       const ctrl = new AbortController()
+      searchAbortRef.current?.abort()
       searchAbortRef.current = ctrl
-      setLoading(true)
       setError(null)
       setStep('results')
       seedOilBoostRef.current = false
-      setRawPlaces([])
-      setDisplayPlaces([])
       setFavoriteIds(new Set())
       setSeenIds(new Set())
-      try {
-        const raw = await fetchRestaurants(selection.bounds, food, ctrl.signal)
-        if (ctrl.signal.aborted) return
+
+      const rankPool = (raw: Restaurant[]) => {
+        poolRef.current = raw
         setRawPlaces(raw)
         const ranked = rankRestaurants(raw, {
           center: selection.center,
@@ -164,13 +163,26 @@ function SearchFlow() {
         })
         setDisplayPlaces(ranked)
         setSeenIds(new Set(ranked.map((p) => p.id)))
+        setLoading(false)
+      }
+
+      if (poolRef.current.length) {
+        rankPool(poolRef.current)
+        return
+      }
+
+      setLoading(true)
+      setDisplayPlaces([])
+      try {
+        const raw = await (prefetchPromiseRef.current ?? fetchRestaurants(selection.bounds, ctrl.signal))
+        if (ctrl.signal.aborted) return
+        rankPool(raw)
       } catch (e) {
         if ((e as Error).name === 'AbortError' || ctrl.signal.aborted) return
         setError('Could not reach OpenStreetMap right now. Try again in a minute, or use Google / Yelp below.')
         setRawPlaces([])
         setDisplayPlaces([])
-      } finally {
-        if (!ctrl.signal.aborted) setLoading(false)
+        setLoading(false)
       }
     },
     [],
@@ -192,10 +204,11 @@ function SearchFlow() {
     })
 
     try {
-      let pool = rawPlaces
+      let pool = poolRef.current.length ? poolRef.current : rawPlaces
       if (pool.length === 0) {
-        pool = await fetchRestaurants(city.bounds, cuisines, ctrl.signal)
+        pool = await (prefetchPromiseRef.current ?? fetchRestaurants(city.bounds, ctrl.signal))
         if (ctrl.signal.aborted) return
+        poolRef.current = pool
         setRawPlaces(pool)
       }
 
@@ -224,6 +237,15 @@ function SearchFlow() {
     }
   }, [city, cuisines, dietary, taste, displayPlaces, favoriteIds, seenIds, rawPlaces])
 
+  useEffect(() => {
+    if (!city || prefetchPromiseRef.current) return
+    prefetchPromiseRef.current = fetchRestaurants(city.bounds).then((raw) => {
+      poolRef.current = raw
+      setRawPlaces(raw)
+      return raw
+    })
+  }, [city])
+
   // Auto-run when shared URL has city + cuisines
   useEffect(() => {
     if (autoRanRef.current || !restored || initialCuisines.length === 0) return
@@ -234,6 +256,13 @@ function SearchFlow() {
   function confirmCity(selection: CitySelection) {
     setCity(selection)
     setStep('cuisine')
+    poolRef.current = []
+    setRawPlaces([])
+    prefetchPromiseRef.current = fetchRestaurants(selection.bounds).then((raw) => {
+      poolRef.current = raw
+      setRawPlaces(raw)
+      return raw
+    })
     setParams((prev) => {
       const next = new URLSearchParams(prev)
       next.set('city', selection.label)
@@ -379,6 +408,8 @@ function SearchFlow() {
             setDisplayPlaces([])
             setFavoriteIds(new Set())
             setSeenIds(new Set())
+            poolRef.current = []
+            prefetchPromiseRef.current = null
             autoRanRef.current = false
           }}
         />
