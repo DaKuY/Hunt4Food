@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import {
   cityCuisineFallbackLinks,
   googleMapsUrl,
@@ -7,7 +8,10 @@ import {
 } from '../lib/links'
 import { isProbablyOpenNow } from '../lib/rank'
 import type { RankedRestaurant } from '../lib/types'
-import { ResultsMap } from './ResultsMap'
+
+const ResultsMap = lazy(() =>
+  import('./ResultsMap').then((m) => ({ default: m.ResultsMap })),
+)
 
 type Props = {
   places: RankedRestaurant[]
@@ -125,7 +129,9 @@ export function ResultsStep({
       )}
 
       {!loading && !error && filtered.length > 0 && (
-        <ResultsMap places={filtered} center={cityCenter} />
+        <Suspense fallback={<p className="muted">Loading map…</p>}>
+          <ResultsMap places={filtered} center={cityCenter} />
+        </Suspense>
       )}
 
       <ol className="result-list">
