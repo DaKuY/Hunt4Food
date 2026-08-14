@@ -21,6 +21,7 @@ type Props = {
   cityLabel: string
   cityCenter: { lat: number; lon: number }
   cuisineLabels: string[]
+  keyword?: string
   loading: boolean
   error: string | null
   openNowOnly: boolean
@@ -54,6 +55,7 @@ export function ResultsStep({
   cityLabel,
   cityCenter,
   cuisineLabels,
+  keyword,
   loading,
   error,
   openNowOnly,
@@ -109,9 +111,16 @@ export function ResultsStep({
         <p className="eyebrow">Hunt4Food · {cityLabel}</p>
         <h2>Ten places worth the hunt</h2>
         <p className="lede">
-          Ranked for your area and taste — good food you&apos;d actually want, not endless scrolling. Star{' '}
-          <strong>Favorite</strong> places you want to keep, then <strong>Find more restaurants</strong> to
-          swap out the rest for fresh options.
+          Ranked for your area and taste
+          {keyword ? (
+            <>
+              {' '}
+              with a boost for <strong>{keyword}</strong>
+            </>
+          ) : null}
+          {' '}
+          — good food you&apos;d actually want, not endless scrolling. Star <strong>Favorite</strong> places
+          you want to keep, then <strong>Find more restaurants</strong> to swap out the rest for fresh options.
         </p>
       </header>
 

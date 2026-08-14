@@ -14,7 +14,6 @@ import {
   loadTaste,
   lovePlace,
   saveShortlist,
-  setDietaryPrefs,
   skipPlace,
   toggleShortlist,
   type ShortlistItem,
@@ -73,11 +72,12 @@ function SearchFlow() {
   })
   const [city, setCity] = useState<CitySelection | null>(() => restored)
   const [cuisines, setCuisines] = useState<CuisineId[]>(() => initialCuisines)
-  const [dietary, setDietary] = useState<DietaryId[]>(() => {
+  const [dietary] = useState<DietaryId[]>(() => {
     const d = params.get('dietary')
     if (d) return d.split(',').filter((id) => isKnownDietaryId(id)) as DietaryId[]
     return taste.dietaryPrefs
   })
+  const [keyword, setKeyword] = useState(() => params.get('keyword') ?? '')
   const [rawPlaces, setRawPlaces] = useState<Restaurant[]>([])
   const [displayPlaces, setDisplayPlaces] = useState<RankedRestaurant[]>([])
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(() => new Set())
@@ -142,7 +142,7 @@ function SearchFlow() {
   }, [dietary, seedOilMap, seedOilLoading, displayPlaces.length])
 
   const runSearch = useCallback(
-    async (selection: CitySelection, food: CuisineId[], dietaryPrefs: DietaryId[]) => {
+    async (selection: CitySelection, food: CuisineId[], dietaryPrefs: DietaryId[], searchKeyword: string) => {
       const ctrl = new AbortController()
       searchAbortRef.current?.abort()
       searchAbortRef.current = ctrl
@@ -159,6 +159,7 @@ function SearchFlow() {
           center: selection.center,
           selectedCuisines: food,
           dietary: dietaryPrefs,
+          keyword: searchKeyword,
           taste: tasteRef.current,
           limit: 10,
         })
@@ -220,6 +221,7 @@ function SearchFlow() {
               center: city.center,
               selectedCuisines: cuisines,
               dietary,
+              keyword,
               taste,
               limit: slots + 15,
               excludeIds: nextSeen,
@@ -236,7 +238,7 @@ function SearchFlow() {
     } finally {
       if (!ctrl.signal.aborted) setLoading(false)
     }
-  }, [city, cuisines, dietary, taste, displayPlaces, favoriteIds, seenIds, rawPlaces])
+  }, [city, cuisines, dietary, keyword, taste, displayPlaces, favoriteIds, seenIds, rawPlaces])
 
   useEffect(() => {
     if (!city || prefetchPromiseRef.current) return
@@ -251,10 +253,11 @@ function SearchFlow() {
   useEffect(() => {
     if (autoRanRef.current || !restored || initialCuisines.length === 0) return
     autoRanRef.current = true
-    void runSearch(restored, initialCuisines, dietary)
-  }, [restored, initialCuisines, dietary, runSearch])
+    void runSearch(restored, initialCuisines, dietary, keyword)
+  }, [restored, initialCuisines, dietary, keyword, runSearch])
 
   function confirmCity(selection: CitySelection) {
+    window.scrollTo({ top: 0, behavior: 'smooth' })
     setCity(selection)
     setStep('cuisine')
     poolRef.current = []
@@ -279,14 +282,17 @@ function SearchFlow() {
 
   function startFind() {
     if (!city || cuisines.length === 0) return
-    setTaste(setDietaryPrefs(taste, dietary))
+    window.scrollTo({ top: 0, behavior: 'smooth' })
     setParams((prev) => {
       const next = new URLSearchParams(prev)
       next.set('cuisines', cuisines.join(','))
       next.set('dietary', dietary.join(','))
+      const trimmed = keyword.trim()
+      if (trimmed) next.set('keyword', trimmed)
+      else next.delete('keyword')
       return next
     })
-    void runSearch(city, cuisines, dietary)
+    void runSearch(city, cuisines, dietary, keyword)
   }
 
   async function copySearchLink() {
@@ -310,16 +316,19 @@ function SearchFlow() {
     <>
       {step === 'city' && (
         <Suspense fallback={<p className="muted">Loading map…</p>}>
-          <CityStep onConfirm={confirmCity} initial={city} />
+          <CityStep
+            onConfirm={confirmCity}
+            initial={city}
+            keyword={keyword}
+            onKeywordChange={setKeyword}
+          />
         </Suspense>
       )}
       {step === 'cuisine' && city && (
         <CuisineStep
           cityLabel={city.label}
           selected={cuisines}
-          dietary={dietary}
           onChange={setCuisines}
-          onDietaryChange={setDietary}
           onBack={() => setStep('city')}
           onNext={startFind}
         />
@@ -330,6 +339,7 @@ function SearchFlow() {
           cityLabel={city.label}
           cityCenter={city.center}
           cuisineLabels={cuisineLabels}
+          keyword={keyword.trim() || undefined}
           loading={loading}
           error={error}
           openNowOnly={openNowOnly}
@@ -357,7 +367,7 @@ function SearchFlow() {
           shortlistedIds={shortlistedIds}
           shareMessage={shareMessage}
           onCopySearchLink={() => void copySearchLink()}
-          onRetry={() => void runSearch(city, cuisines, dietary)}
+          onRetry={() => void runSearch(city, cuisines, dietary, keyword)}
           onLove={(place) => {
             setTaste(
               lovePlace(taste, {
