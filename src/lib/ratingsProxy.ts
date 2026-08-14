@@ -1,5 +1,9 @@
 import { loadSettings } from './settings'
 
+/** Deployed Apps Script web app (public — not a secret). Override via Settings or env. */
+export const BUILTIN_RATINGS_PROXY_URL =
+  'https://script.google.com/macros/s/AKfycbwTuIEJasIVE2eXy1SPXTQHazFXhLOUlJWoiY3P22OP2okq6NXJDhzTo7bVr3iOXgQs6A/exec'
+
 /**
  * JSONP fetch for Google Apps Script web apps (CORS-safe from GitHub Pages).
  */
@@ -38,7 +42,11 @@ export function jsonpGet<T>(baseUrl: string, params: Record<string, string>): Pr
 
 export function ratingsProxyUrl(): string {
   const settings = loadSettings()
-  return settings.ratingsProxyUrl || (import.meta.env.VITE_RATINGS_PROXY_URL as string | undefined) || ''
+  return (
+    settings.ratingsProxyUrl ||
+    (import.meta.env.VITE_RATINGS_PROXY_URL as string | undefined) ||
+    BUILTIN_RATINGS_PROXY_URL
+  )
 }
 
 export function ratingsProxyConfigured(): boolean {
