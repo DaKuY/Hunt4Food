@@ -186,11 +186,11 @@ export function CityStep({ onConfirm, initial }: Props) {
   return (
     <section className="step city-step">
       <header className="step-header">
-        <p className="eyebrow">Step 1</p>
+        <p className="eyebrow">Hunt4Food · Step 1</p>
         <h2>Where are you eating?</h2>
         <p className="lede">
-          Type a city, tap <strong>Use my location</strong>, or zoom the map to a neighborhood and confirm that
-          area.
+          Hunt what&apos;s good nearby — type a city, tap <strong>Use my location</strong>, or zoom the map
+          to a neighborhood and confirm that area.
         </p>
       </header>
 
@@ -277,7 +277,7 @@ export function CityStep({ onConfirm, initial }: Props) {
           {rectBounds && (
             <Rectangle
               bounds={rectBounds}
-              pathOptions={{ color: '#e8c547', weight: 2, fillOpacity: 0.08 }}
+              pathOptions={{ color: '#9a7b52', weight: 2, fillOpacity: 0.08 }}
             />
           )}
         </MapContainer>

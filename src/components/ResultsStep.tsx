@@ -106,11 +106,12 @@ export function ResultsStep({
   return (
     <section className="step results-step">
       <header className="step-header">
-        <p className="eyebrow">Your top picks · {cityLabel}</p>
-        <h2>Ten places worth checking</h2>
+        <p className="eyebrow">Hunt4Food · {cityLabel}</p>
+        <h2>Ten places worth the hunt</h2>
         <p className="lede">
-          Ranked from OpenStreetMap for your area and taste. Star <strong>Favorite</strong> places you
-          want to keep, then <strong>Find more restaurants</strong> to swap out the rest for fresh options.
+          Ranked for your area and taste — good food you&apos;d actually want, not endless scrolling. Star{' '}
+          <strong>Favorite</strong> places you want to keep, then <strong>Find more restaurants</strong> to
+          swap out the rest for fresh options.
         </p>
       </header>
 

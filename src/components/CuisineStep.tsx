@@ -37,11 +37,11 @@ export function CuisineStep({
   return (
     <section className="step cuisine-step">
       <header className="step-header">
-        <p className="eyebrow">Step 2 · {cityLabel}</p>
+        <p className="eyebrow">Hunt4Food · Step 2 · {cityLabel}</p>
         <h2>What are you craving?</h2>
         <p className="lede">
-          Pick up to three food types — salmon, steak, salad, smoothies, and more. Dietary boosts are
-          optional soft signals, not hard filters.
+          Pick up to three food types — healthy picks that still taste great, or whatever you&apos;re in the
+          mood for. Dietary boosts are optional soft signals, not hard filters.
         </p>
       </header>
 

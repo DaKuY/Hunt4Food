@@ -500,7 +500,7 @@ function Shell() {
       <div className="atmosphere" aria-hidden />
       <header className="topbar">
         <button type="button" className="top-brand" onClick={goHome}>
-          OpenPlate
+          Hunt4Food
         </button>
         <nav>
           <Link to="/taste">My Taste</Link>
@@ -519,7 +519,7 @@ function Shell() {
       </main>
       <footer className="site-footer">
         <p>
-          Place data ©{' '}
+          <strong>Hunt4Food</strong> · Place data ©{' '}
           <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">
             OpenStreetMap contributors
           </a>
