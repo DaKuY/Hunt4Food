@@ -1,7 +1,7 @@
 import { googleMapsUrl, tripadvisorUrl, yelpUrl } from './links'
 import { consumeGoogleQuota, getGoogleQuota, googleQuotaMessage } from './googleQuota'
 import { jsonpGet, ratingsProxyUrl } from './ratingsProxy'
-import { readCache, writeCache } from './storage'
+import { cacheTtlUntilEndOfUtcDay, readCache, utcDayKey, writeCache } from './storage'
 import { loadSettings } from './settings'
 import type { Restaurant } from './types'
 
@@ -22,11 +22,14 @@ export type PlaceRatings = {
   tripadvisor: SourceRating
 }
 
-const CACHE_TTL = 1000 * 60 * 60 * 24 * 7 // 7 days
-const CACHE_VERSION = 'v2' // bump when rating sources change
+const CACHE_VERSION = 'v3'
 
 function cacheKey(place: Restaurant, cityLabel: string, source: string): string {
-  return `rating:${CACHE_VERSION}:${source}:${place.id}:${cityLabel.slice(0, 40)}`
+  return `rating:${CACHE_VERSION}:${utcDayKey()}:${source}:${place.id}:${cityLabel.slice(0, 40)}`
+}
+
+function cacheTtl(): number {
+  return cacheTtlUntilEndOfUtcDay()
 }
 
 function emptyRatings(place: Restaurant, cityLabel: string): PlaceRatings {
@@ -42,6 +45,52 @@ function emptyRatings(place: Restaurant, cityLabel: string): PlaceRatings {
   }
 }
 
+function normalizeName(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+/** Loose match so Google Text Search results map to the OSM place name. */
+function namesSimilar(query: string, returned: string): boolean {
+  const a = normalizeName(query)
+  const b = normalizeName(returned)
+  if (!a || !b) return false
+  if (a === b) return true
+  if (a.includes(b) || b.includes(a)) return true
+  if (a.length >= 5 && b.length >= 5 && a.slice(0, 6) === b.slice(0, 6)) return true
+  return false
+}
+
+function readSourceCache(
+  place: Restaurant,
+  cityLabel: string,
+  source: 'google' | 'yelp' | 'tripadvisor',
+): SourceRating | null {
+  return readCache<SourceRating>(cacheKey(place, cityLabel, source))
+}
+
+function writeSourceCache(
+  place: Restaurant,
+  cityLabel: string,
+  source: 'google' | 'yelp' | 'tripadvisor',
+  value: SourceRating,
+): void {
+  writeCache(cacheKey(place, cityLabel, source), value, cacheTtl())
+}
+
+/** Synchronous read for instant display on refresh (same UTC day only). */
+export function readCachedPlaceRatings(place: Restaurant, cityLabel: string): PlaceRatings | null {
+  const base = emptyRatings(place, cityLabel)
+  const google = readSourceCache(place, cityLabel, 'google')
+  const yelp = readSourceCache(place, cityLabel, 'yelp')
+  const tripadvisor = readSourceCache(place, cityLabel, 'tripadvisor')
+  if (!google && !yelp && !tripadvisor) return null
+  return {
+    google: google ?? base.google,
+    yelp: yelp ?? base.yelp,
+    tripadvisor: tripadvisor ?? base.tripadvisor,
+  }
+}
+
 async function fetchGooglePlacesRating(
   place: Restaurant,
   cityLabel: string,
@@ -53,7 +102,7 @@ async function fetchGooglePlacesRating(
     locationBias: {
       circle: {
         center: { latitude: place.lat, longitude: place.lon },
-        radius: 800,
+        radius: 500,
       },
     },
     maxResultCount: 1,
@@ -81,14 +130,23 @@ async function fetchGooglePlacesRating(
   }
 
   const hit = data.places?.[0]
+  const fallbackUrl = googleMapsUrl(place, cityLabel)
+  if (!hit) {
+    return { rating: null, reviewCount: null, url: fallbackUrl }
+  }
+
+  const returnedName = hit.displayName?.text ?? ''
+  if (!namesSimilar(place.name, returnedName)) {
+    return { rating: null, reviewCount: null, url: hit.googleMapsUri ?? fallbackUrl }
+  }
+
   return {
-    rating: hit?.rating ?? null,
-    reviewCount: hit?.userRatingCount ?? null,
-    url: hit?.googleMapsUri ?? googleMapsUrl(place, cityLabel),
+    rating: hit.rating ?? null,
+    reviewCount: hit.userRatingCount ?? null,
+    url: hit.googleMapsUri ?? fallbackUrl,
   }
 }
 
-/** Fetch Yelp / TripAdvisor via Google Apps Script proxy (browser scraping is blocked). */
 async function fetchProxyRating(
   source: 'yelp' | 'tripadvisor',
   place: Restaurant,
@@ -117,20 +175,77 @@ async function fetchProxyRating(
   }
 }
 
-async function fetchYelpRating(
+async function resolveGoogleRating(
   place: Restaurant,
   cityLabel: string,
-  _signal?: AbortSignal,
-): Promise<Pick<SourceRating, 'rating' | 'reviewCount' | 'url'>> {
-  return fetchProxyRating('yelp', place, cityLabel)
+  signal?: AbortSignal,
+): Promise<SourceRating> {
+  const base = emptyRatings(place, cityLabel).google
+  const cached = readSourceCache(place, cityLabel, 'google')
+  if (cached) return cached
+
+  const settings = loadSettings()
+  if (!settings.googlePlacesApiKey) {
+    const result = { ...base, error: 'Google Places key not configured' }
+    writeSourceCache(place, cityLabel, 'google', result)
+    return result
+  }
+  if (!getGoogleQuota().canRequest) {
+    const result = { ...base, error: googleQuotaMessage() }
+    writeSourceCache(place, cityLabel, 'google', result)
+    return result
+  }
+
+  try {
+    const data = await fetchGooglePlacesRating(place, cityLabel, settings.googlePlacesApiKey, signal)
+    if (!consumeGoogleQuota()) {
+      const result = { ...base, error: googleQuotaMessage() }
+      writeSourceCache(place, cityLabel, 'google', result)
+      return result
+    }
+    const result: SourceRating = { ...base, ...data }
+    writeSourceCache(place, cityLabel, 'google', result)
+    return result
+  } catch (e) {
+    const msg = (e as Error).message.includes('403')
+      ? 'Google API key rejected — check referrer restrictions'
+      : 'Google rating unavailable'
+    const result: SourceRating = { ...base, error: msg }
+    writeSourceCache(place, cityLabel, 'google', result)
+    return result
+  }
 }
 
-async function fetchTripAdvisorRating(
+async function resolveProxyRating(
+  source: 'yelp' | 'tripadvisor',
   place: Restaurant,
   cityLabel: string,
-  _signal?: AbortSignal,
-): Promise<Pick<SourceRating, 'rating' | 'reviewCount' | 'url'>> {
-  return fetchProxyRating('tripadvisor', place, cityLabel)
+  signal?: AbortSignal,
+): Promise<SourceRating> {
+  const base = emptyRatings(place, cityLabel)[source]
+  const cached = readSourceCache(place, cityLabel, source)
+  if (cached) return cached
+
+  if (signal?.aborted) return base
+
+  try {
+    const data = await fetchProxyRating(source, place, cityLabel)
+    const result: SourceRating = { ...base, ...data }
+    writeSourceCache(place, cityLabel, source, result)
+    return result
+  } catch {
+    const msg =
+      source === 'yelp'
+        ? ratingsProxyUrl()
+          ? 'Yelp rating unavailable'
+          : 'Deploy ratings proxy (see Settings)'
+        : ratingsProxyUrl()
+          ? 'TripAdvisor rating unavailable'
+          : 'Deploy ratings proxy (see Settings)'
+    const result: SourceRating = { ...base, error: msg }
+    writeSourceCache(place, cityLabel, source, result)
+    return result
+  }
 }
 
 export async function fetchPlaceRatings(
@@ -138,73 +253,21 @@ export async function fetchPlaceRatings(
   cityLabel: string,
   signal?: AbortSignal,
 ): Promise<PlaceRatings> {
-  const base = emptyRatings(place, cityLabel)
-  const settings = loadSettings()
+  const googleCached = readSourceCache(place, cityLabel, 'google')
+  const yelpCached = readSourceCache(place, cityLabel, 'yelp')
+  const taCached = readSourceCache(place, cityLabel, 'tripadvisor')
 
-  const cached = readCache<PlaceRatings>(cacheKey(place, cityLabel, 'all'))
-  if (cached) return cached
+  if (googleCached && yelpCached && taCached) {
+    return { google: googleCached, yelp: yelpCached, tripadvisor: taCached }
+  }
 
   const [google, yelp, tripadvisor] = await Promise.all([
-    (async () => {
-      const ck = cacheKey(place, cityLabel, 'google')
-      const hit = readCache<SourceRating>(ck)
-      if (hit) return hit
-      if (!settings.googlePlacesApiKey) {
-        return { ...base.google, error: 'Google Places key not configured' }
-      }
-      if (!getGoogleQuota().canRequest) {
-        return { ...base.google, error: googleQuotaMessage() }
-      }
-      if (!consumeGoogleQuota()) {
-        return { ...base.google, error: googleQuotaMessage() }
-      }
-      try {
-        const data = await fetchGooglePlacesRating(place, cityLabel, settings.googlePlacesApiKey, signal)
-        const result: SourceRating = { ...base.google, ...data }
-        writeCache(ck, result, CACHE_TTL)
-        return result
-      } catch (e) {
-        // Quota was consumed; do not retry automatically to avoid burning calls
-        const msg = (e as Error).message.includes('403')
-          ? 'Google API key rejected — check referrer restrictions'
-          : 'Google rating unavailable'
-        return { ...base.google, error: msg }
-      }
-    })(),
-    (async () => {
-      const ck = cacheKey(place, cityLabel, 'yelp')
-      const hit = readCache<SourceRating>(ck)
-      if (hit) return hit
-      try {
-        const data = await fetchYelpRating(place, cityLabel, signal)
-        const result: SourceRating = { ...base.yelp, ...data }
-        writeCache(ck, result, CACHE_TTL)
-        return result
-      } catch {
-        return { ...base.yelp, error: ratingsProxyUrl() ? 'Yelp rating unavailable' : 'Deploy ratings proxy (see Settings)' }
-      }
-    })(),
-    (async () => {
-      const ck = cacheKey(place, cityLabel, 'tripadvisor')
-      const hit = readCache<SourceRating>(ck)
-      if (hit) return hit
-      try {
-        const data = await fetchTripAdvisorRating(place, cityLabel, signal)
-        const result: SourceRating = { ...base.tripadvisor, ...data }
-        writeCache(ck, result, CACHE_TTL)
-        return result
-      } catch {
-        return {
-          ...base.tripadvisor,
-          error: ratingsProxyUrl() ? 'TripAdvisor rating unavailable' : 'Deploy ratings proxy (see Settings)',
-        }
-      }
-    })(),
+    googleCached ? Promise.resolve(googleCached) : resolveGoogleRating(place, cityLabel, signal),
+    yelpCached ? Promise.resolve(yelpCached) : resolveProxyRating('yelp', place, cityLabel, signal),
+    taCached ? Promise.resolve(taCached) : resolveProxyRating('tripadvisor', place, cityLabel, signal),
   ])
 
-  const combined = { google, yelp, tripadvisor }
-  writeCache(cacheKey(place, cityLabel, 'all'), combined, CACHE_TTL)
-  return combined
+  return { google, yelp, tripadvisor }
 }
 
 export function formatRating(r: SourceRating): string {

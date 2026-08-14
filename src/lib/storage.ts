@@ -39,6 +39,18 @@ export function writeCache<T>(key: string, value: T, ttlMs: number): void {
   } satisfies CacheEntry<T>)
 }
 
+/** UTC calendar date YYYY-MM-DD — used to bucket daily caches. */
+export function utcDayKey(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
+/** Milliseconds until end of current UTC day (minimum 1 minute). */
+export function cacheTtlUntilEndOfUtcDay(): number {
+  const now = new Date()
+  const end = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1)
+  return Math.max(60_000, end - now.getTime())
+}
+
 /** Drop expired cache keys to keep localStorage lean. */
 export function pruneExpiredCache(): void {
   try {
