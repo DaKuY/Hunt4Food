@@ -27,7 +27,7 @@ export type PlaceRatings = {
   price: PriceRange
 }
 
-const CACHE_VERSION = 'v6'
+const CACHE_VERSION = 'v7'
 
 function cacheKey(place: Restaurant, cityLabel: string, source: string): string {
   return `rating:${CACHE_VERSION}:${utcDayKey()}:${source}:${place.id}:${cityLabel.slice(0, 40)}`
@@ -71,7 +71,25 @@ function namesSimilar(query: string, returned: string): boolean {
   if (a === b) return true
   if (a.includes(b) || b.includes(a)) return true
   if (a.length >= 5 && b.length >= 5 && a.slice(0, 6) === b.slice(0, 6)) return true
+
+  const tokensA = query
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((t) => t.length > 2)
+  const tokensB = returned
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((t) => t.length > 2)
+  if (tokensA.length && tokensB.length) {
+    const overlap = tokensA.filter((t) => tokensB.some((u) => u.includes(t) || t.includes(u)))
+    if (overlap.length >= 1) return true
+  }
+
   return false
+}
+
+function isFailedRating(value: SourceRating): boolean {
+  return value.rating == null && Boolean(value.error)
 }
 
 function readSourceCache(
@@ -88,7 +106,8 @@ function writeSourceCache(
   source: 'google' | 'yelp' | 'tripadvisor',
   value: SourceRating,
 ): void {
-  writeCache(cacheKey(place, cityLabel, source), value, cacheTtl())
+  const ttl = isFailedRating(value) ? 10 * 60 * 1000 : cacheTtl()
+  writeCache(cacheKey(place, cityLabel, source), value, ttl)
 }
 
 /** Synchronous read for instant display on refresh (same UTC day only). */
@@ -152,19 +171,8 @@ async function fetchGooglePlacesRating(
     return { rating: null, reviewCount: null, url: fallbackUrl, priceLevel: null, priceLabel: null }
   }
 
-  const returnedName = hit.displayName?.text ?? ''
   const priceLevel = googlePriceLevel(hit.priceLevel)
   const priceLabel = priceLevel != null ? mergePrice(priceLevel, null).label : null
-
-  if (!namesSimilar(place.name, returnedName)) {
-    return {
-      rating: null,
-      reviewCount: null,
-      url: hit.googleMapsUri ?? fallbackUrl,
-      priceLevel,
-      priceLabel,
-    }
-  }
 
   return {
     rating: hit.rating ?? null,
@@ -176,37 +184,74 @@ async function fetchGooglePlacesRating(
 }
 
 async function fetchProxyRating(
-  source: 'yelp' | 'tripadvisor',
+  source: 'google' | 'yelp' | 'tripadvisor',
   place: Restaurant,
   cityLabel: string,
-): Promise<Pick<SourceRating, 'rating' | 'reviewCount' | 'url' | 'priceLevel' | 'priceLabel'>> {
+): Promise<Pick<SourceRating, 'rating' | 'reviewCount' | 'url' | 'priceLevel' | 'priceLabel' | 'error'>> {
   const proxy = ratingsProxyUrl()
-  const fallbackUrl = source === 'yelp' ? yelpUrl(place, cityLabel) : tripadvisorUrl(place, cityLabel)
+  const fallbackUrl =
+    source === 'google'
+      ? googleMapsUrl(place, cityLabel)
+      : source === 'yelp'
+        ? yelpUrl(place, cityLabel)
+        : tripadvisorUrl(place, cityLabel)
   if (!proxy) {
     throw new Error('Ratings proxy not configured')
   }
-  const data = await jsonpGet<{
-    rating?: number | null
-    reviewCount?: number | null
-    url?: string
-    price?: string | null
-    error?: string
-  }>(proxy, {
+
+  const params: Record<string, string> = {
     source,
     name: place.name,
     city: cityLabel,
     lat: String(place.lat),
     lon: String(place.lon),
-  })
-  if (data.error && data.rating == null) throw new Error(data.error)
-  const priceLevel = source === 'yelp' ? yelpPriceLevel(data.price) : null
+  }
+  if (source === 'google') {
+    const key = loadSettings().googlePlacesApiKey
+    if (key) params.googleKey = key
+  }
+
+  const data = await jsonpGet<{
+    rating?: number | null
+    reviewCount?: number | null
+    url?: string
+    price?: string | null
+    priceLevel?: string | number | null
+    matchedName?: string | null
+    error?: string
+  }>(proxy, params)
+
+  if (data.error && data.rating == null && data.priceLevel == null && data.price == null) {
+    throw new Error(data.error)
+  }
+
+  const priceLevel =
+    source === 'google'
+      ? googlePriceLevel(data.priceLevel)
+      : source === 'yelp'
+        ? yelpPriceLevel(data.price)
+        : null
   const priceLabel = priceLevel != null ? mergePrice(priceLevel, null).label : null
+
+  let rating = data.rating ?? null
+  let reviewCount = data.reviewCount ?? null
+  if (
+    source === 'google' &&
+    data.matchedName &&
+    rating != null &&
+    !namesSimilar(place.name, data.matchedName)
+  ) {
+    rating = null
+    reviewCount = null
+  }
+
   return {
-    rating: data.rating ?? null,
-    reviewCount: data.reviewCount ?? null,
+    rating,
+    reviewCount,
     url: data.url || fallbackUrl,
     priceLevel,
     priceLabel,
+    error: data.error,
   }
 }
 
@@ -217,7 +262,22 @@ async function resolveGoogleRating(
 ): Promise<SourceRating> {
   const base = emptyRatings(place, cityLabel).google
   const cached = readSourceCache(place, cityLabel, 'google')
-  if (cached) return cached
+  if (cached && (!isFailedRating(cached) || cached.rating != null)) return cached
+
+  if (signal?.aborted) return base
+
+  if (ratingsProxyUrl()) {
+    try {
+      const data = await fetchProxyRating('google', place, cityLabel)
+      if (data.rating != null || data.priceLevel != null) {
+        const result: SourceRating = { ...base, ...data }
+        writeSourceCache(place, cityLabel, 'google', result)
+        return result
+      }
+    } catch {
+      // fall through to direct API
+    }
+  }
 
   const settings = loadSettings()
   if (!settings.googlePlacesApiKey) {
@@ -243,7 +303,7 @@ async function resolveGoogleRating(
     return result
   } catch (e) {
     const msg = (e as Error).message.includes('403')
-      ? 'Google API key rejected — check referrer restrictions'
+      ? 'Google blocked — redeploy ratings proxy (Settings)'
       : 'Google rating unavailable'
     const result: SourceRating = { ...base, error: msg }
     writeSourceCache(place, cityLabel, 'google', result)
@@ -259,7 +319,7 @@ async function resolveProxyRating(
 ): Promise<SourceRating> {
   const base = emptyRatings(place, cityLabel)[source]
   const cached = readSourceCache(place, cityLabel, source)
-  if (cached) return cached
+  if (cached && (!isFailedRating(cached) || cached.rating != null)) return cached
 
   if (signal?.aborted) return base
 

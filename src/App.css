@@ -44,6 +44,10 @@
   color: var(--text);
   text-decoration: none;
   letter-spacing: -0.02em;
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
 }
 
 .topbar nav {

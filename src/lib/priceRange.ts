@@ -17,13 +17,21 @@ const LABELS: Record<PriceLevel, string> = {
 /** Google Places priceLevel enum → 1–4 */
 export function googlePriceLevel(raw?: string | number | null): PriceLevel | null {
   if (raw == null) return null
-  if (typeof raw === 'number' && raw >= 1 && raw <= 4) return raw as PriceLevel
+
+  if (typeof raw === 'number') {
+    // Google enum: 0=unspecified, 1=free, 2=inexpensive, 3=moderate, 4=expensive, 5=very expensive
+    if (raw === 0 || raw === 1) return null
+    if (raw >= 2 && raw <= 5) return (raw - 1) as PriceLevel
+    return null
+  }
+
   const s = String(raw).toUpperCase()
-  if (s.includes('INEXPENSIVE') || s === 'PRICE_LEVEL_INEXPENSIVE') return 1
-  if (s.includes('MODERATE') || s === 'PRICE_LEVEL_MODERATE') return 2
-  if (s.includes('EXPENSIVE') && !s.includes('VERY')) return 3
+  if (s.includes('UNSPECIFIED')) return null
+  if (s.includes('FREE')) return null
+  if (s.includes('INEXPENSIVE')) return 1
+  if (s.includes('MODERATE')) return 2
   if (s.includes('VERY_EXPENSIVE') || s.includes('VERY EXPENSIVE')) return 4
-  if (s === 'FREE' || s.includes('PRICE_LEVEL_FREE')) return 1
+  if (s.includes('EXPENSIVE')) return 3
   return null
 }
 

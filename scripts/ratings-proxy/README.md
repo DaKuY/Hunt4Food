@@ -8,6 +8,7 @@ GitHub Pages is static — the browser cannot scrape Yelp or TripAdvisor directl
 2. Delete the default `Code.gs` contents and paste everything from `Code.gs` in this folder → **Save**
 3. **Project Settings** (gear) → **Script properties** → add:
    - `YELP_API_KEY` (optional but **strongly recommended**): create a free app at [Yelp Fusion](https://www.yelp.com/developers/v3/manage_app). Without it, Yelp may return no rating.
+   - `GOOGLE_PLACES_API_KEY` (optional): only needed if the browser key is referrer-locked; the app also passes its built-in key when calling the proxy.
 4. **Deploy** → **New deployment** → type **Web app**
    - Execute as: **Me**
    - Who has access: **Anyone**
@@ -28,6 +29,6 @@ GitHub Pages is static — the browser cannot scrape Yelp or TripAdvisor directl
 
 ## Test
 
-In Settings, click **Test proxy**. You should see sample Yelp/TripAdvisor ratings within a few seconds.
+In Settings, click **Test proxy**. You should see sample Yelp/TripAdvisor/Google ratings within a few seconds.
 
 TripAdvisor ratings use DuckDuckGo search snippets (TripAdvisor blocks direct scraping). The app tries your Apps Script proxy first, then a browser fallback. **Redeploy** `Code.gs` after updates (Deploy → Manage deployments → Edit → New version).

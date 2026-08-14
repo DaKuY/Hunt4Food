@@ -33,7 +33,13 @@ export function RatingsRow({ ratings, loading }: Props) {
           >
             <span className="rating-source">{LABELS[key]}</span>
             <span className="rating-value">
-              {r.rating != null ? formatRating(r) : r.error?.includes('proxy') ? 'Setup' : '—'}
+              {r.rating != null
+                ? formatRating(r)
+                : r.error?.includes('proxy') || r.error?.includes('blocked')
+                  ? 'Fix proxy'
+                  : r.error?.includes('limit')
+                    ? 'Limit'
+                    : '—'}
             </span>
           </a>
         )
