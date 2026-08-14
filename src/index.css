@@ -1,16 +1,18 @@
 :root {
-  --bg-ink: #0c1f1c;
-  --bg-deep: #12332c;
-  --bg-panel: rgba(18, 42, 38, 0.72);
-  --text: #f3efe6;
-  --muted: #b7c4bf;
-  --accent: #e8c547;
-  --accent-2: #3ecfac;
-  --danger: #ff8f7a;
-  --line: rgba(243, 239, 230, 0.14);
-  --shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
-  --font-display: 'Fraunces', Georgia, serif;
+  --bg-ink: #f7f3eb;
+  --bg-deep: #faf8f4;
+  --bg-panel: rgba(255, 255, 255, 0.88);
+  --text: #1c1917;
+  --muted: #7a746c;
+  --accent: #9a7b52;
+  --accent-2: #b8956c;
+  --danger: #c45c4a;
+  --line: rgba(28, 25, 23, 0.12);
+  --shadow: 0 18px 48px rgba(28, 25, 23, 0.08);
+  --font-display: 'Cormorant Garamond', Georgia, serif;
   --font-body: 'DM Sans', system-ui, sans-serif;
+  --radius: 8px;
+  --radius-sm: 6px;
   color: var(--text);
   background: var(--bg-ink);
   font-family: var(--font-body);
@@ -36,7 +38,7 @@ body {
 }
 
 a {
-  color: var(--accent-2);
+  color: var(--accent);
 }
 
 button,
