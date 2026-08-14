@@ -1,5 +1,12 @@
 import { useState } from 'react'
 import { getGoogleQuota, googleQuotaMessage } from '../lib/googleQuota'
+import {
+  clearLocationPref,
+  loadLocationPref,
+  locationPrefLabel,
+  saveLocationPref,
+  type LocationPermissionMode,
+} from '../lib/locationPref'
 import { jsonpGet, ratingsProxyConfigured, ratingsProxyUrl } from '../lib/ratingsProxy'
 import { loadSettings, saveSettings } from '../lib/settings'
 
@@ -7,6 +14,10 @@ export function SettingsPage() {
   const initial = loadSettings()
   const [googleKey, setGoogleKey] = useState(() => initial.googlePlacesApiKey)
   const [proxyUrl, setProxyUrl] = useState(() => initial.ratingsProxyUrl)
+  const [locationPref, setLocationPref] = useState<LocationPermissionMode | 'unset'>(() => {
+    const p = loadLocationPref()
+    return p ?? 'unset'
+  })
   const [message, setMessage] = useState<string | null>(null)
   const [testResult, setTestResult] = useState<string | null>(null)
   const [testing, setTesting] = useState(false)
@@ -17,6 +28,11 @@ export function SettingsPage() {
       googlePlacesApiKey: googleKey.trim(),
       ratingsProxyUrl: proxyUrl.trim(),
     })
+    if (locationPref === 'unset') {
+      clearLocationPref()
+    } else {
+      saveLocationPref(locationPref)
+    }
     setMessage('Saved.')
     setTestResult(null)
   }
@@ -77,6 +93,24 @@ export function SettingsPage() {
         against the limit.
       </p>
 
+      <h3 className="subhead">Location</h3>
+      <label className="field">
+        <span>When I tap “Use my location”</span>
+        <select
+          value={locationPref}
+          onChange={(e) => setLocationPref(e.target.value as LocationPermissionMode | 'unset')}
+        >
+          <option value="unset">Prompt me (default)</option>
+          <option value="ask">Ask every time</option>
+          <option value="always">Always allow</option>
+        </select>
+      </label>
+      <p className="muted small">
+        Current: {locationPrefLabel(locationPref === 'unset' ? null : locationPref)}. “Allow once” on the
+        prompt never saves — you will be asked again next time unless you choose Always.
+      </p>
+
+      <h3 className="subhead">Google Places</h3>
       <label className="field">
         <span>Google Places API key (optional override)</span>
         <input
