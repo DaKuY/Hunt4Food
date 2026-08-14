@@ -1,6 +1,8 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { HashRouter, Link, Navigate, Route, Routes, useNavigate, useSearchParams } from 'react-router-dom'
 import { cuisineById } from './data/cuisines'
+import { usePlaceRatings } from './hooks/usePlaceRatings'
+import { buildSearchShareUrl } from './lib/links'
 import { pruneExpiredCache } from './lib/storage'
 import { fetchRestaurants } from './lib/overpass'
 import { rankRestaurants } from './lib/rank'
@@ -14,9 +16,10 @@ import {
   toggleShortlist,
   type ShortlistItem,
 } from './lib/taste'
-import type { CitySelection, CuisineId, DietaryId, RankedRestaurant, TasteProfile } from './lib/types'
+import type { CitySelection, CuisineId, DietaryId, RankedRestaurant, Restaurant, TasteProfile } from './lib/types'
 import { CuisineStep } from './components/CuisineStep'
 import { ResultsStep } from './components/ResultsStep'
+import { SettingsPage } from './components/SettingsPage'
 import { TastePage } from './components/TastePage'
 import './App.css'
 
@@ -53,8 +56,8 @@ function Home() {
       <p className="brand">OpenPlate</p>
       <h1>Find places that actually fit what you like to eat.</h1>
       <p className="hero-lede">
-        Pick a city on the map, choose up to three cuisines, and get ten ranked spots — with links to
-        Google, Yelp, and TripAdvisor reviews.
+        Pick a city on the map, choose up to three cuisines, and get ten ranked spots — with Google, Yelp,
+        and TripAdvisor ratings.
       </p>
       <div className="hero-actions">
         <button type="button" className="btn primary" onClick={() => navigate('/search')}>
@@ -72,27 +75,48 @@ function SearchFlow() {
   const [params, setParams] = useSearchParams()
   const { taste, setTaste } = useTaste()
   const restored = cityFromParams(params)
-  const [step, setStep] = useState<'city' | 'cuisine' | 'results'>(() => (restored ? 'cuisine' : 'city'))
-  const [city, setCity] = useState<CitySelection | null>(() => restored)
-  const [cuisines, setCuisines] = useState<CuisineId[]>(() => {
+  const initialCuisines = useMemo(() => {
     const c = params.get('cuisines')
-    if (!c) return []
+    if (!c) return [] as CuisineId[]
     return c.split(',').filter(Boolean).slice(0, 3) as CuisineId[]
+  }, [params])
+
+  const [step, setStep] = useState<'city' | 'cuisine' | 'results'>(() => {
+    if (restored && initialCuisines.length) return 'results'
+    if (restored) return 'cuisine'
+    return 'city'
   })
+  const [city, setCity] = useState<CitySelection | null>(() => restored)
+  const [cuisines, setCuisines] = useState<CuisineId[]>(() => initialCuisines)
   const [dietary, setDietary] = useState<DietaryId[]>(() => {
     const d = params.get('dietary')
     if (d) return d.split(',').filter(Boolean) as DietaryId[]
     return taste.dietaryPrefs
   })
-  const [places, setPlaces] = useState<RankedRestaurant[]>([])
+  const [rawPlaces, setRawPlaces] = useState<Restaurant[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [openNowOnly, setOpenNowOnly] = useState(false)
   const [hasWebsiteOnly, setHasWebsiteOnly] = useState(false)
   const [shortlist, setShortlist] = useState<ShortlistItem[]>(() => loadShortlist())
+  const [shareMessage, setShareMessage] = useState<string | null>(null)
   const searchAbortRef = useRef<AbortController | null>(null)
+  const autoRanRef = useRef(false)
   const tasteRef = useRef(taste)
   tasteRef.current = taste
+
+  const places = useMemo(() => {
+    if (!city || rawPlaces.length === 0) return [] as RankedRestaurant[]
+    return rankRestaurants(rawPlaces, {
+      center: city.center,
+      selectedCuisines: cuisines,
+      dietary,
+      taste,
+      limit: 10,
+    })
+  }, [rawPlaces, city, cuisines, dietary, taste])
+
+  const { ratingsMap, ratingsLoading } = usePlaceRatings(places, city?.label ?? '', step === 'results' && places.length > 0)
 
   useEffect(() => {
     return () => {
@@ -101,34 +125,35 @@ function SearchFlow() {
   }, [])
 
   const runSearch = useCallback(
-    async (selection: CitySelection, food: CuisineId[], diet: DietaryId[]) => {
+    async (selection: CitySelection, food: CuisineId[]) => {
       searchAbortRef.current?.abort()
       const ctrl = new AbortController()
       searchAbortRef.current = ctrl
       setLoading(true)
       setError(null)
       setStep('results')
+      setRawPlaces([])
       try {
         const raw = await fetchRestaurants(selection.bounds, food, ctrl.signal)
         if (ctrl.signal.aborted) return
-        const ranked = rankRestaurants(raw, {
-          center: selection.center,
-          selectedCuisines: food,
-          dietary: diet,
-          taste: tasteRef.current,
-          limit: 10,
-        })
-        setPlaces(ranked)
+        setRawPlaces(raw)
       } catch (e) {
         if ((e as Error).name === 'AbortError' || ctrl.signal.aborted) return
         setError('Could not reach OpenStreetMap right now. Try again in a minute, or use Google / Yelp below.')
-        setPlaces([])
+        setRawPlaces([])
       } finally {
         if (!ctrl.signal.aborted) setLoading(false)
       }
     },
     [],
   )
+
+  // Auto-run when shared URL has city + cuisines
+  useEffect(() => {
+    if (autoRanRef.current || !restored || initialCuisines.length === 0) return
+    autoRanRef.current = true
+    void runSearch(restored, initialCuisines)
+  }, [restored, initialCuisines, runSearch])
 
   function confirmCity(selection: CitySelection) {
     setCity(selection)
@@ -155,7 +180,16 @@ function SearchFlow() {
       next.set('dietary', dietary.join(','))
       return next
     })
-    void runSearch(city, cuisines, dietary)
+    void runSearch(city, cuisines)
+  }
+
+  async function copySearchLink() {
+    try {
+      await navigator.clipboard.writeText(buildSearchShareUrl(params))
+      setShareMessage('Search link copied — send it to a friend!')
+    } catch {
+      setShareMessage(buildSearchShareUrl(params))
+    }
   }
 
   const cuisineLabels = useMemo(
@@ -194,10 +228,15 @@ function SearchFlow() {
           error={error}
           openNowOnly={openNowOnly}
           hasWebsiteOnly={hasWebsiteOnly}
+          ratingsMap={ratingsMap}
+          ratingsLoading={ratingsLoading}
           onToggleOpenNow={() => setOpenNowOnly((v) => !v)}
           onToggleWebsite={() => setHasWebsiteOnly((v) => !v)}
           lovedIds={lovedIds}
           shortlistedIds={shortlistedIds}
+          shareMessage={shareMessage}
+          onCopySearchLink={() => void copySearchLink()}
+          onRetry={() => void runSearch(city, cuisines)}
           onLove={(place) => {
             setTaste(
               lovePlace(taste, {
@@ -221,7 +260,7 @@ function SearchFlow() {
                 vibeTags: [],
               }),
             )
-            setPlaces((prev) => prev.filter((p) => p.id !== place.id))
+            setRawPlaces((prev) => prev.filter((p) => p.id !== place.id))
           }}
           onShortlist={(place) => {
             setShortlist(
@@ -237,7 +276,8 @@ function SearchFlow() {
           onBack={() => setStep('cuisine')}
           onNewSearch={() => {
             setStep('city')
-            setPlaces([])
+            setRawPlaces([])
+            autoRanRef.current = false
           }}
         />
       )}
@@ -319,6 +359,7 @@ function Shell() {
         <nav>
           <Link to="/search">Search</Link>
           <Link to="/taste">My Taste</Link>
+          <Link to="/settings">Settings</Link>
         </nav>
       </header>
       <main>
@@ -326,6 +367,7 @@ function Shell() {
           <Route path="/" element={<Home />} />
           <Route path="/search" element={<SearchFlow />} />
           <Route path="/taste" element={<TasteRoute />} />
+          <Route path="/settings" element={<SettingsPage />} />
           <Route path="/shortlist" element={<ShortlistView />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
@@ -336,7 +378,7 @@ function Shell() {
           <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">
             OpenStreetMap contributors
           </a>
-          . Reviews open on Google, Yelp, and TripAdvisor. Taste profiles stay on your device.
+          . Ratings from Google, Yelp, and TripAdvisor when available. Taste profiles stay on your device.
         </p>
       </footer>
     </div>

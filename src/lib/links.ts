@@ -31,13 +31,20 @@ export function menuOrWebsiteUrl(place: Restaurant, cityLabel: string): { href: 
 export function cityCuisineFallbackLinks(
   cityLabel: string,
   cuisineLabels: string[],
-): { google: string; yelp: string } {
+): { google: string; yelp: string; tripadvisor: string } {
   const food = cuisineLabels.join(' ')
   const gq = encodeURIComponent(`best ${food} restaurants in ${cityLabel}`)
   const yDesc = encodeURIComponent(food || 'restaurants')
   const yLoc = encodeURIComponent(cityLabel)
+  const taQ = encodeURIComponent(`best ${food} restaurants ${cityLabel}`)
   return {
     google: `https://www.google.com/maps/search/?api=1&query=${gq}`,
     yelp: `https://www.yelp.com/search?find_desc=${yDesc}&find_loc=${yLoc}`,
+    tripadvisor: `https://www.tripadvisor.com/Search?q=${taQ}`,
   }
+}
+
+export function buildSearchShareUrl(params: URLSearchParams): string {
+  const qs = params.toString()
+  return `${window.location.origin}${window.location.pathname}#/search${qs ? `?${qs}` : ''}`
 }

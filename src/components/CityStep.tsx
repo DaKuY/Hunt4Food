@@ -98,6 +98,46 @@ export function CityStep({ onConfirm, initial }: Props) {
     selectHit(c)
   }
 
+  const [locating, setLocating] = useState(false)
+
+  function useMyLocation() {
+    if (!navigator.geolocation) {
+      setError('Geolocation is not supported in this browser.')
+      return
+    }
+    setLocating(true)
+    setError(null)
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const lat = pos.coords.latitude
+        const lon = pos.coords.longitude
+        const delta = 0.04
+        let label = `${lat.toFixed(3)}, ${lon.toFixed(3)}`
+        try {
+          label = await reverseGeocode(lat, lon)
+        } catch {
+          // keep coords
+        }
+        const city: CitySelection = {
+          label,
+          center: { lat, lon },
+          bounds: { south: lat - delta, west: lon - delta, north: lat + delta, east: lon + delta },
+          source: 'map',
+        }
+        setDraft(city)
+        setMapCenter([lat, lon])
+        setMapKey((k) => k + 1)
+        setQuery(label)
+        setLocating(false)
+      },
+      () => {
+        setError('Could not get your location. Check browser permissions.')
+        setLocating(false)
+      },
+      { enableHighAccuracy: true, timeout: 12000 },
+    )
+  }
+
   async function confirmMapArea() {
     if (!draft) {
       // Use current default map bounds approx
@@ -217,7 +257,10 @@ export function CityStep({ onConfirm, initial }: Props) {
         <p className="map-hint">Pan and zoom — the visible area becomes your search box.</p>
       </div>
 
-      <div className="step-actions">
+      <div className="step-actions row">
+        <button type="button" className="btn ghost" onClick={useMyLocation} disabled={locating}>
+          {locating ? 'Locating…' : 'Use my location'}
+        </button>
         <button type="button" className="btn primary" onClick={() => void confirmMapArea()}>
           Use this area
         </button>
