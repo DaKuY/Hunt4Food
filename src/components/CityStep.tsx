@@ -5,8 +5,10 @@ import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png'
 import markerIcon from 'leaflet/dist/images/marker-icon.png'
 import markerShadow from 'leaflet/dist/images/marker-shadow.png'
 import { reverseGeocode, searchCities, type GeocodeHit } from '../lib/geocode'
+import { loadLocationPref, saveLocationPref } from '../lib/locationPref'
 import { loadRecentCities, pushRecentCity, type RecentCity } from '../lib/taste'
 import type { CitySelection, MapBounds } from '../lib/types'
+import { LocationPermissionPrompt } from './LocationPermissionPrompt'
 import 'leaflet/dist/leaflet.css'
 
 // Fix default marker icons under Vite
@@ -99,8 +101,9 @@ export function CityStep({ onConfirm, initial }: Props) {
   }
 
   const [locating, setLocating] = useState(false)
+  const [showLocationPrompt, setShowLocationPrompt] = useState(false)
 
-  function useMyLocation() {
+  function runGeolocation() {
     if (!navigator.geolocation) {
       setError('Geolocation is not supported in this browser.')
       return
@@ -136,6 +139,28 @@ export function CityStep({ onConfirm, initial }: Props) {
       },
       { enableHighAccuracy: true, timeout: 12000 },
     )
+  }
+
+  function requestMyLocation() {
+    if (!navigator.geolocation) {
+      setError('Geolocation is not supported in this browser.')
+      return
+    }
+    setError(null)
+    const pref = loadLocationPref()
+    if (pref === 'always') {
+      runGeolocation()
+    } else {
+      setShowLocationPrompt(true)
+    }
+  }
+
+  function handleLocationChoice(mode: 'once' | 'ask' | 'always') {
+    setShowLocationPrompt(false)
+    if (mode === 'ask' || mode === 'always') {
+      saveLocationPref(mode)
+    }
+    runGeolocation()
   }
 
   async function confirmMapArea() {
@@ -181,6 +206,11 @@ export function CityStep({ onConfirm, initial }: Props) {
 
   return (
     <section className="step city-step">
+      <LocationPermissionPrompt
+        open={showLocationPrompt}
+        onChoose={handleLocationChoice}
+        onDismiss={() => setShowLocationPrompt(false)}
+      />
       <header className="step-header">
         <p className="eyebrow">Step 1</p>
         <h2>Where are you eating?</h2>
@@ -203,7 +233,7 @@ export function CityStep({ onConfirm, initial }: Props) {
       <button
         type="button"
         className="btn ghost location-btn"
-        onClick={useMyLocation}
+        onClick={requestMyLocation}
         disabled={locating}
         aria-busy={locating}
       >
@@ -242,7 +272,7 @@ export function CityStep({ onConfirm, initial }: Props) {
         <button
           type="button"
           className="map-locate-btn btn ghost"
-          onClick={useMyLocation}
+          onClick={requestMyLocation}
           disabled={locating}
           title="Use my location"
           aria-label="Use my location"
