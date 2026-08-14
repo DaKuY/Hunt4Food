@@ -112,7 +112,7 @@ function cacheKey(bounds: MapBounds, cuisines: CuisineId[]): string {
   const b = [bounds.south, bounds.west, bounds.north, bounds.east]
     .map((n) => n.toFixed(3))
     .join(',')
-  return `overpass:${b}:${[...cuisines].sort().join('+')}`
+  return `overpass:v2:${b}:${[...cuisines].sort().join('+')}`
 }
 
 async function fetchMirror(

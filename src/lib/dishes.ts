@@ -3,7 +3,7 @@ import { jsonpGet, ratingsProxyUrl } from './ratingsProxy'
 import { cacheTtlUntilEndOfUtcDay, readCache, utcDayKey, writeCache } from './storage'
 import type { CuisineId, Restaurant } from './types'
 
-const CACHE_VERSION = 'v2'
+const CACHE_VERSION = 'v3'
 
 function cacheKey(place: Restaurant, cityLabel: string): string {
   return `dishes:${CACHE_VERSION}:${utcDayKey()}:${place.id}:${cityLabel.slice(0, 40)}`

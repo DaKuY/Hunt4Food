@@ -5,7 +5,7 @@ import { usePlaceDishes } from './hooks/usePlaceDishes'
 import { usePlaceRatings } from './hooks/usePlaceRatings'
 import { usePlaceSeedOil } from './hooks/usePlaceSeedOil'
 import { buildSearchShareUrl } from './lib/links'
-import { pruneExpiredCache } from './lib/storage'
+import { ensureCacheGeneration, pruneExpiredCache } from './lib/storage'
 import { fetchRestaurants } from './lib/overpass'
 import { rankRestaurants } from './lib/rank'
 import { seedOilGradeScore } from './lib/seedOil'
@@ -470,6 +470,7 @@ function ShortlistView() {
 
 function Shell() {
   useEffect(() => {
+    ensureCacheGeneration()
     pruneExpiredCache()
   }, [])
 

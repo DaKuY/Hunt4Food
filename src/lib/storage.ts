@@ -1,5 +1,8 @@
 const PREFIX = 'openplate:'
 
+/** Bump to wipe all cached API responses on next app load. */
+export const CACHE_GENERATION = 2
+
 export function readJson<T>(key: string, fallback: T): T {
   try {
     const raw = localStorage.getItem(PREFIX + key)
@@ -49,6 +52,24 @@ export function cacheTtlUntilEndOfUtcDay(): number {
   const now = new Date()
   const end = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1)
   return Math.max(60_000, end - now.getTime())
+}
+
+/** Clear every cached API response when CACHE_GENERATION increases. */
+export function ensureCacheGeneration(): void {
+  const current = readJson<number>('cacheGeneration', 0)
+  if (current >= CACHE_GENERATION) return
+  try {
+    const toRemove: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const full = localStorage.key(i)
+      if (!full?.startsWith(PREFIX + 'cache:')) continue
+      toRemove.push(full)
+    }
+    toRemove.forEach((k) => localStorage.removeItem(k))
+    writeJson('cacheGeneration', CACHE_GENERATION)
+  } catch {
+    // private mode — ignore
+  }
 }
 
 /** Drop expired cache keys to keep localStorage lean. */

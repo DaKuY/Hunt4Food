@@ -27,7 +27,7 @@ export type PlaceRatings = {
   price: PriceRange
 }
 
-const CACHE_VERSION = 'v5'
+const CACHE_VERSION = 'v6'
 
 function cacheKey(place: Restaurant, cityLabel: string, source: string): string {
   return `rating:${CACHE_VERSION}:${utcDayKey()}:${source}:${place.id}:${cityLabel.slice(0, 40)}`
