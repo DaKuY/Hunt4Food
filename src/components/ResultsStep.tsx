@@ -8,6 +8,7 @@ import {
 } from '../lib/links'
 import type { PlaceRatings } from '../lib/ratings'
 import { isProbablyOpenNow } from '../lib/rank'
+import type { SeedOilInfo } from '../lib/seedOil'
 import type { RankedRestaurant } from '../lib/types'
 import { RatingsRow } from './RatingsRow'
 
@@ -26,6 +27,9 @@ type Props = {
   hasWebsiteOnly: boolean
   ratingsMap: Record<string, PlaceRatings>
   ratingsLoading: boolean
+  seedOilMap: Record<string, SeedOilInfo>
+  seedOilLoading: boolean
+  showSeedOil: boolean
   dishesMap: Record<string, string[]>
   dishesLoading: boolean
   favoriteIds: Set<string>
@@ -56,6 +60,9 @@ export function ResultsStep({
   hasWebsiteOnly,
   ratingsMap,
   ratingsLoading,
+  seedOilMap,
+  seedOilLoading,
+  showSeedOil,
   dishesMap,
   dishesLoading,
   favoriteIds,
@@ -179,6 +186,7 @@ export function ResultsStep({
         {filtered.map((place, index) => {
           const menu = menuOrWebsiteUrl(place, cityLabel)
           const ratings = ratingsMap[place.id] ?? null
+          const seedOil = seedOilMap[place.id]
           const dishes = dishesMap[place.id]
           const isFavorite = favoriteIds.has(place.id)
           return (
@@ -191,6 +199,16 @@ export function ResultsStep({
                 </h3>
                 <p className="meta">
                   {place.cuisines.slice(0, 3).join(' · ') || place.amenity || 'Restaurant'}
+                  {ratings?.price.label ? (
+                    <>
+                      {' · '}
+                      <span className="price-range" title="Typical price range">
+                        {ratings.price.label}
+                      </span>
+                    </>
+                  ) : ratingsLoading ? (
+                    <> · <span className="muted">price…</span></>
+                  ) : null}
                   {place.distanceKm < 50 ? ` · ${place.distanceKm.toFixed(1)} km` : ''}
                   {place.address ? ` · ${place.address}` : ''}
                   {place.phone ? (
@@ -201,6 +219,17 @@ export function ResultsStep({
                   ) : null}
                 </p>
                 <RatingsRow ratings={ratings} loading={ratingsLoading && !ratings} />
+                {seedOil?.grade ? (
+                  <p className="seed-oil-badge">
+                    <a href={seedOil.url} target="_blank" rel="noreferrer" title={seedOil.cookingOil ?? undefined}>
+                      Seed Oil Tracker: grade {seedOil.grade}
+                      {seedOil.risk ? ` · ${seedOil.risk}` : ''}
+                      {seedOil.chain ? ` · ${seedOil.chain}` : ''}
+                    </a>
+                  </p>
+                ) : seedOilLoading && showSeedOil ? (
+                  <p className="seed-oil-badge muted">Checking seed-oil data…</p>
+                ) : null}
                 {dishes?.length ? (
                   <p className="popular-dishes">
                     <span className="popular-dishes-label">Popular dishes</span>

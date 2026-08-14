@@ -18,12 +18,15 @@ export type CitySelection = {
 }
 
 export type CuisineId =
+  | 'salmon'
+  | 'steak'
+  | 'salad'
+  | 'smoothie'
   | 'seafood'
   | 'indian'
   | 'chinese'
   | 'japanese'
   | 'italian'
-  | 'smoothie'
   | 'healthy'
   | 'mexican'
   | 'thai'
@@ -35,7 +38,13 @@ export type CuisineId =
   | 'vegan'
   | 'bbq'
 
-export type DietaryId = 'vegetarian' | 'vegan' | 'gluten_free' | 'halal'
+export type DietaryId =
+  | 'vegetarian'
+  | 'vegan'
+  | 'gluten_free'
+  | 'halal'
+  | 'grass_fed'
+  | 'no_seed_oils'
 
 export type Restaurant = {
   id: string

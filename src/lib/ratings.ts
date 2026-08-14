@@ -1,5 +1,6 @@
 import { googleMapsUrl, tripadvisorUrl, yelpUrl } from './links'
 import { consumeGoogleQuota, getGoogleQuota, googleQuotaMessage } from './googleQuota'
+import { googlePriceLevel, mergePrice, yelpPriceLevel, type PriceLevel, type PriceRange } from './priceRange'
 import { jsonpGet, ratingsProxyUrl } from './ratingsProxy'
 import { cacheTtlUntilEndOfUtcDay, readCache, utcDayKey, writeCache } from './storage'
 import { loadSettings } from './settings'
@@ -13,6 +14,8 @@ export type SourceRating = {
   rating: number | null
   reviewCount: number | null
   url: string
+  priceLevel?: PriceLevel | null
+  priceLabel?: string | null
   loading?: boolean
   error?: string
 }
@@ -21,9 +24,10 @@ export type PlaceRatings = {
   google: SourceRating
   yelp: SourceRating
   tripadvisor: SourceRating
+  price: PriceRange
 }
 
-const CACHE_VERSION = 'v4'
+const CACHE_VERSION = 'v6'
 
 function cacheKey(place: Restaurant, cityLabel: string, source: string): string {
   return `rating:${CACHE_VERSION}:${utcDayKey()}:${source}:${place.id}:${cityLabel.slice(0, 40)}`
@@ -34,6 +38,7 @@ function cacheTtl(): number {
 }
 
 function emptyRatings(place: Restaurant, cityLabel: string): PlaceRatings {
+  const emptyPrice: PriceRange = { level: null, label: null, source: null }
   return {
     google: { source: 'google', rating: null, reviewCount: null, url: googleMapsUrl(place, cityLabel) },
     yelp: { source: 'yelp', rating: null, reviewCount: null, url: yelpUrl(place, cityLabel) },
@@ -43,6 +48,14 @@ function emptyRatings(place: Restaurant, cityLabel: string): PlaceRatings {
       reviewCount: null,
       url: tripadvisorUrl(place, cityLabel),
     },
+    price: emptyPrice,
+  }
+}
+
+function withPrice(ratings: PlaceRatings): PlaceRatings {
+  return {
+    ...ratings,
+    price: mergePrice(ratings.google.priceLevel ?? null, ratings.yelp.priceLevel ?? null),
   }
 }
 
@@ -85,11 +98,12 @@ export function readCachedPlaceRatings(place: Restaurant, cityLabel: string): Pl
   const yelp = readSourceCache(place, cityLabel, 'yelp')
   const tripadvisor = readSourceCache(place, cityLabel, 'tripadvisor')
   if (!google && !yelp && !tripadvisor) return null
-  return {
+  return withPrice({
     google: google ?? base.google,
     yelp: yelp ?? base.yelp,
     tripadvisor: tripadvisor ?? base.tripadvisor,
-  }
+    price: base.price,
+  })
 }
 
 async function fetchGooglePlacesRating(
@@ -97,7 +111,7 @@ async function fetchGooglePlacesRating(
   cityLabel: string,
   apiKey: string,
   signal?: AbortSignal,
-): Promise<Pick<SourceRating, 'rating' | 'reviewCount' | 'url'>> {
+): Promise<Pick<SourceRating, 'rating' | 'reviewCount' | 'url' | 'priceLevel' | 'priceLabel'>> {
   const body = {
     textQuery: `${place.name} ${cityLabel}`.trim(),
     locationBias: {
@@ -115,7 +129,8 @@ async function fetchGooglePlacesRating(
     headers: {
       'Content-Type': 'application/json',
       'X-Goog-Api-Key': apiKey,
-      'X-Goog-FieldMask': 'places.displayName,places.rating,places.userRatingCount,places.googleMapsUri',
+      'X-Goog-FieldMask':
+        'places.displayName,places.rating,places.userRatingCount,places.googleMapsUri,places.priceLevel',
     },
     body: JSON.stringify(body),
   })
@@ -127,24 +142,36 @@ async function fetchGooglePlacesRating(
       rating?: number
       userRatingCount?: number
       googleMapsUri?: string
+      priceLevel?: string
     }>
   }
 
   const hit = data.places?.[0]
   const fallbackUrl = googleMapsUrl(place, cityLabel)
   if (!hit) {
-    return { rating: null, reviewCount: null, url: fallbackUrl }
+    return { rating: null, reviewCount: null, url: fallbackUrl, priceLevel: null, priceLabel: null }
   }
 
   const returnedName = hit.displayName?.text ?? ''
+  const priceLevel = googlePriceLevel(hit.priceLevel)
+  const priceLabel = priceLevel != null ? mergePrice(priceLevel, null).label : null
+
   if (!namesSimilar(place.name, returnedName)) {
-    return { rating: null, reviewCount: null, url: hit.googleMapsUri ?? fallbackUrl }
+    return {
+      rating: null,
+      reviewCount: null,
+      url: hit.googleMapsUri ?? fallbackUrl,
+      priceLevel,
+      priceLabel,
+    }
   }
 
   return {
     rating: hit.rating ?? null,
     reviewCount: hit.userRatingCount ?? null,
     url: hit.googleMapsUri ?? fallbackUrl,
+    priceLevel,
+    priceLabel,
   }
 }
 
@@ -152,27 +179,34 @@ async function fetchProxyRating(
   source: 'yelp' | 'tripadvisor',
   place: Restaurant,
   cityLabel: string,
-): Promise<Pick<SourceRating, 'rating' | 'reviewCount' | 'url'>> {
+): Promise<Pick<SourceRating, 'rating' | 'reviewCount' | 'url' | 'priceLevel' | 'priceLabel'>> {
   const proxy = ratingsProxyUrl()
   const fallbackUrl = source === 'yelp' ? yelpUrl(place, cityLabel) : tripadvisorUrl(place, cityLabel)
   if (!proxy) {
     throw new Error('Ratings proxy not configured')
   }
-  const data = await jsonpGet<{ rating?: number | null; reviewCount?: number | null; url?: string; error?: string }>(
-    proxy,
-    {
-      source,
-      name: place.name,
-      city: cityLabel,
-      lat: String(place.lat),
-      lon: String(place.lon),
-    },
-  )
+  const data = await jsonpGet<{
+    rating?: number | null
+    reviewCount?: number | null
+    url?: string
+    price?: string | null
+    error?: string
+  }>(proxy, {
+    source,
+    name: place.name,
+    city: cityLabel,
+    lat: String(place.lat),
+    lon: String(place.lon),
+  })
   if (data.error && data.rating == null) throw new Error(data.error)
+  const priceLevel = source === 'yelp' ? yelpPriceLevel(data.price) : null
+  const priceLabel = priceLevel != null ? mergePrice(priceLevel, null).label : null
   return {
     rating: data.rating ?? null,
     reviewCount: data.reviewCount ?? null,
     url: data.url || fallbackUrl,
+    priceLevel,
+    priceLabel,
   }
 }
 
@@ -271,7 +305,7 @@ export async function fetchPlaceRatings(
   const taCached = readSourceCache(place, cityLabel, 'tripadvisor')
 
   if (googleCached && yelpCached && taCached) {
-    return { google: googleCached, yelp: yelpCached, tripadvisor: taCached }
+    return withPrice({ google: googleCached, yelp: yelpCached, tripadvisor: taCached, price: emptyRatings(place, cityLabel).price })
   }
 
   const [google, yelp, tripadvisor] = await Promise.all([
@@ -280,7 +314,7 @@ export async function fetchPlaceRatings(
     taCached ? Promise.resolve(taCached) : resolveProxyRating('tripadvisor', place, cityLabel, signal),
   ])
 
-  return { google, yelp, tripadvisor }
+  return withPrice({ google, yelp, tripadvisor, price: emptyRatings(place, cityLabel).price })
 }
 
 export function formatRating(r: SourceRating): string {

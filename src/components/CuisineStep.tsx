@@ -1,4 +1,4 @@
-import { CUISINES, DIETARY_OPTIONS } from '../data/cuisines'
+import { CUISINES, CUISINE_GROUPS, DIETARY_OPTIONS } from '../data/cuisines'
 import type { CuisineId, DietaryId } from '../lib/types'
 
 type Props = {
@@ -39,26 +39,34 @@ export function CuisineStep({
       <header className="step-header">
         <p className="eyebrow">Step 2 · {cityLabel}</p>
         <h2>What are you craving?</h2>
-        <p className="lede">Pick up to three food types. Soft dietary boosts are optional — no hard filters.</p>
+        <p className="lede">
+          Pick up to three food types — salmon, steak, salad, smoothies, and more. Dietary boosts are
+          optional soft signals, not hard filters.
+        </p>
       </header>
 
-      <div className="chip-row wrap">
-        {CUISINES.map((c) => {
-          const on = selected.includes(c.id)
-          const disabled = !on && selected.length >= 3
-          return (
-            <button
-              key={c.id}
-              type="button"
-              className={`chip ${on ? 'on' : ''}`}
-              disabled={disabled}
-              onClick={() => toggle(c.id)}
-            >
-              {c.label}
-            </button>
-          )
-        })}
-      </div>
+      {CUISINE_GROUPS.map((group) => (
+        <div key={group.id} className="cuisine-group">
+          <h3 className="subhead">{group.label}</h3>
+          <div className="chip-row wrap">
+            {CUISINES.filter((c) => c.group === group.id).map((c) => {
+              const on = selected.includes(c.id)
+              const disabled = !on && selected.length >= 3
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  className={`chip ${on ? 'on' : ''}`}
+                  disabled={disabled}
+                  onClick={() => toggle(c.id)}
+                >
+                  {c.label}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      ))}
       <p className="muted">{selected.length}/3 selected</p>
 
       <h3 className="subhead">Dietary boosts</h3>
@@ -69,11 +77,22 @@ export function CuisineStep({
             type="button"
             className={`chip ghost ${dietary.includes(d.id) ? 'on' : ''}`}
             onClick={() => toggleDiet(d.id)}
+            title={d.hint}
           >
             {d.label}
           </button>
         ))}
       </div>
+      {dietary.includes('no_seed_oils') && (
+        <p className="muted small">
+          Seed-oil grades from{' '}
+          <a href="https://seedoiltracker.com" target="_blank" rel="noreferrer">
+            Seed Oil Tracker
+          </a>{' '}
+          when the place matches a known chain. Seed Oil Scout has no public API — we use Seed Oil Tracker
+          instead.
+        </p>
+      )}
 
       <div className="step-actions row">
         <button type="button" className="btn ghost" onClick={onBack}>
