@@ -158,24 +158,58 @@ function parseYelpDishesFromHtml_(html) {
 }
 
 function fetchTripAdvisor_(name, city) {
-  var searchUrl =
+  var searchFallback =
     'https://www.tripadvisor.com/Search?q=' + encodeURIComponent(name + ' ' + city + ' restaurant');
-  var html = UrlFetchApp.fetch(searchUrl, {
+
+  // TripAdvisor blocks direct scraping; DuckDuckGo lite exposes rating snippets.
+  var ddgUrl =
+    'https://lite.duckduckgo.com/lite/?q=' +
+    encodeURIComponent(name + ' ' + city + ' tripadvisor restaurant');
+  var html = UrlFetchApp.fetch(ddgUrl, {
+    muteHttpExceptions: true,
+    headers: {
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    },
+  }).getContentText();
+
+  var ratingMatch = html.match(/rated\s+(\d+(?:\.\d+)?)\s+of\s+5\s+on\s+Tripadvisor/i);
+  var countMatch = html.match(/See\s+(\d[\d,]*)\s+unbiased reviews/i);
+  var linkMatch = html.match(/uddg=(https[^&]*tripadvisor\.com[^&]*Restaurant_Review[^&]*)/i);
+
+  var url = searchFallback;
+  if (linkMatch) {
+    try {
+      url = decodeURIComponent(linkMatch[1]);
+    } catch (e) {
+      url = searchFallback;
+    }
+  }
+
+  if (ratingMatch) {
+    return {
+      rating: Number(ratingMatch[1]),
+      reviewCount: countMatch ? Number(String(countMatch[1]).replace(/,/g, '')) : null,
+      url: url,
+    };
+  }
+
+  // Fallback: direct TA search (often blocked, but cheap to try)
+  var taHtml = UrlFetchApp.fetch(searchFallback, {
     muteHttpExceptions: true,
     headers: { 'User-Agent': 'Mozilla/5.0 (compatible; OpenPlate/1.0)' },
   }).getContentText();
-
-  var bubble = html.match(/bubble_rating rating-(\d+)/);
+  var bubble = taHtml.match(/bubble_rating rating-(\d+)/);
   var rating = bubble ? Number(bubble[1]) / 10 : null;
   if (!rating) {
-    var jsonRating = html.match(/"rating":\s*(\d+(?:\.\d+)?)/);
+    var jsonRating = taHtml.match(/"rating":\s*(\d+(?:\.\d+)?)/);
     if (jsonRating) rating = Number(jsonRating[1]);
   }
-  var countMatch = html.match(/(\d[\d,]*)\s+reviews/i) || html.match(/"num_reviews":\s*(\d+)/);
-  var linkMatch = html.match(/href="(https:\/\/www\.tripadvisor\.com\/Restaurant_Review[^"]+)"/);
+  var taCount = taHtml.match(/(\d[\d,]*)\s+reviews/i) || taHtml.match(/"num_reviews":\s*(\d+)/);
+  var taLink = taHtml.match(/href="(https:\/\/www\.tripadvisor\.com\/Restaurant_Review[^"]+)"/);
   return {
     rating: rating,
-    reviewCount: countMatch ? Number(String(countMatch[1]).replace(/,/g, '')) : null,
-    url: linkMatch ? linkMatch[1].replace(/&amp;/g, '&') : searchUrl,
+    reviewCount: taCount ? Number(String(taCount[1]).replace(/,/g, '')) : null,
+    url: taLink ? taLink[1].replace(/&amp;/g, '&') : url,
   };
 }

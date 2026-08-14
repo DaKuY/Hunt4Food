@@ -29,3 +29,5 @@ GitHub Pages is static — the browser cannot scrape Yelp or TripAdvisor directl
 ## Test
 
 In Settings, click **Test proxy**. You should see sample Yelp/TripAdvisor ratings within a few seconds.
+
+TripAdvisor ratings use DuckDuckGo search snippets (TripAdvisor blocks direct scraping). **Redeploy** the web app after updating `Code.gs` so changes take effect.

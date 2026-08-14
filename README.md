@@ -23,14 +23,15 @@ No accounts required for basic use. Data from OpenStreetMap via Photon + Overpas
 
 ### Ratings note
 
-- **Google**: Places Text Search via build-time secret or Settings override; hard daily/monthly caps
-- **Yelp & TripAdvisor**: require a free [Google Apps Script proxy](scripts/ratings-proxy/README.md) (browser scraping is blocked). Add `YELP_API_KEY` in Script properties for reliable Yelp stars.
+- **Google**: Places Text Search via build-time secret or Settings override; hard daily/monthly caps; **cached until midnight UTC** (no repeat API calls same day)
+- **Yelp & TripAdvisor**: require a free [Google Apps Script proxy](scripts/ratings-proxy/README.md). Ratings are **cached per day** in your browser.
 
 ### Yelp / TripAdvisor setup (one-time)
 
 1. Deploy `scripts/ratings-proxy/Code.gs` at [script.google.com](https://script.google.com) (see [README](scripts/ratings-proxy/README.md))
 2. Add GitHub environment secret **`VITE_RATINGS_PROXY_URL`** = your `/exec` URL, **or** paste the URL in the app’s **Settings** page
 3. Optional: add **`YELP_API_KEY`** in Apps Script properties for Yelp Fusion (recommended)
+4. After updating `Code.gs`, redeploy the web app (**Deploy → Manage deployments → Edit → New version**) so TripAdvisor fixes take effect
 
 ## One-time GitHub Pages setup
 

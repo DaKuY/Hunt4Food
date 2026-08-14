@@ -1,13 +1,12 @@
 import { cuisineById } from '../data/cuisines'
 import { jsonpGet, ratingsProxyUrl } from './ratingsProxy'
-import { readCache, writeCache } from './storage'
+import { cacheTtlUntilEndOfUtcDay, readCache, utcDayKey, writeCache } from './storage'
 import type { CuisineId, Restaurant } from './types'
 
-const CACHE_TTL = 1000 * 60 * 60 * 24 * 7
-const CACHE_VERSION = 'v1'
+const CACHE_VERSION = 'v2'
 
 function cacheKey(place: Restaurant, cityLabel: string): string {
-  return `dishes:${CACHE_VERSION}:${place.id}:${cityLabel.slice(0, 40)}`
+  return `dishes:${CACHE_VERSION}:${utcDayKey()}:${place.id}:${cityLabel.slice(0, 40)}`
 }
 
 /** Best-effort signature dishes from OSM cuisine tags + selected cuisines. */
@@ -79,6 +78,7 @@ export async function fetchPopularDishes(
   const fallback = signatureDishes(place, selectedCuisines)
   if (signal?.aborted) return fallback
 
+  let result = fallback
   try {
     const fromYelp = await fetchYelpDishes(place, cityLabel)
     const merged = [...fromYelp]
@@ -86,10 +86,11 @@ export async function fetchPopularDishes(
       if (merged.length >= 3) break
       if (!merged.some((x) => x.toLowerCase() === d.toLowerCase())) merged.push(d)
     }
-    const result = merged.slice(0, 3)
-    if (result.length) writeCache(ck, result, CACHE_TTL)
-    return result.length ? result : fallback
+    result = merged.slice(0, 3)
   } catch {
-    return fallback
+    result = fallback
   }
+
+  writeCache(ck, result, cacheTtlUntilEndOfUtcDay())
+  return result
 }
