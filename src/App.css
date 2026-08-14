@@ -348,6 +348,31 @@ main {
   background: #ebe4d8;
 }
 
+.leaflet-container {
+  font-family: var(--font-body);
+}
+
+.leaflet-bar a {
+  border-color: var(--line);
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.leaflet-bar a:hover {
+  background: rgba(154, 123, 82, 0.1);
+  color: var(--accent);
+}
+
+.leaflet-control-attribution {
+  background: rgba(250, 248, 244, 0.88) !important;
+  color: var(--muted) !important;
+  font-size: 0.68rem;
+}
+
+.leaflet-control-attribution a {
+  color: var(--accent);
+}
+
 .map-hint,
 .muted,
 .selected-label {

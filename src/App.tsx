@@ -519,7 +519,7 @@ function Shell() {
       </main>
       <footer className="site-footer">
         <p>
-          Place data ©{' '}
+          <strong>Hunt4Food</strong> · Place data ©{' '}
           <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">
             OpenStreetMap contributors
           </a>
