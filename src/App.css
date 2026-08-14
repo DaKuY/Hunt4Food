@@ -48,6 +48,82 @@
   background: none;
   padding: 0;
   cursor: pointer;
+  line-height: 1;
+}
+
+.brand-mark {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 0.04em;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.brand-mark--sm {
+  font-size: 0.95rem;
+}
+
+.brand-hunt {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.brand-bow-arrow {
+  width: 2.15em;
+  height: 0.72em;
+  margin: 0 0 -0.08em 0.05em;
+  color: var(--accent);
+}
+
+.brand-hunt-text {
+  line-height: 1;
+}
+
+.brand-fork-four {
+  width: 0.62em;
+  height: 0.95em;
+  margin: 0 0.02em 0.04em;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.brand-food {
+  display: inline-flex;
+  align-items: baseline;
+  line-height: 1;
+}
+
+.brand-food-f,
+.brand-food-d {
+  line-height: 1;
+}
+
+.brand-eyes {
+  display: inline-block;
+  font-size: 0.72em;
+  line-height: 1;
+  margin: 0 -0.04em;
+  transform: translateY(0.06em);
+}
+
+.brand-mark--sm .brand-bow-arrow {
+  width: 1.85em;
+  height: 0.65em;
+}
+
+.brand-mark--sm .brand-fork-four {
+  width: 0.55em;
+  height: 0.85em;
+}
+
+.brand-mark--sm .brand-eyes {
+  font-size: 0.68em;
+}
+
+.site-footer .brand-mark {
+  vertical-align: middle;
 }
 
 .topbar nav {

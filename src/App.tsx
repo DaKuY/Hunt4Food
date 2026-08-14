@@ -24,6 +24,7 @@ import { CuisineStep } from './components/CuisineStep'
 import { ResultsStep } from './components/ResultsStep'
 import { SettingsPage } from './components/SettingsPage'
 import { TastePage } from './components/TastePage'
+import { BrandMark, brandAriaLabel } from './components/BrandMark'
 import './App.css'
 
 const CityStep = lazy(() =>
@@ -499,8 +500,8 @@ function Shell() {
     <div className="app-shell">
       <div className="atmosphere" aria-hidden />
       <header className="topbar">
-        <button type="button" className="top-brand" onClick={goHome}>
-          Hunt4Food
+        <button type="button" className="top-brand" onClick={goHome} aria-label={brandAriaLabel()}>
+          <BrandMark />
         </button>
         <nav>
           <Link to="/taste">My Taste</Link>
@@ -519,7 +520,7 @@ function Shell() {
       </main>
       <footer className="site-footer">
         <p>
-          <strong>Hunt4Food</strong> · Place data ©{' '}
+          <BrandMark size="sm" /> · Place data ©{' '}
           <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">
             OpenStreetMap contributors
           </a>
