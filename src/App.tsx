@@ -316,19 +316,16 @@ function SearchFlow() {
     <>
       {step === 'city' && (
         <Suspense fallback={<p className="muted">Loading map…</p>}>
-          <CityStep
-            onConfirm={confirmCity}
-            initial={city}
-            keyword={keyword}
-            onKeywordChange={setKeyword}
-          />
+          <CityStep onConfirm={confirmCity} initial={city} />
         </Suspense>
       )}
       {step === 'cuisine' && city && (
         <CuisineStep
           cityLabel={city.label}
           selected={cuisines}
+          keyword={keyword}
           onChange={setCuisines}
+          onKeywordChange={setKeyword}
           onBack={() => setStep('city')}
           onNext={startFind}
         />

@@ -19,8 +19,6 @@ L.Icon.Default.mergeOptions({
 type Props = {
   onConfirm: (city: CitySelection) => void
   initial?: CitySelection | null
-  keyword: string
-  onKeywordChange: (keyword: string) => void
 }
 
 function BoundsWatcher({ onBounds }: { onBounds: (b: MapBounds, center: { lat: number; lon: number }) => void }) {
@@ -45,7 +43,7 @@ function BoundsWatcher({ onBounds }: { onBounds: (b: MapBounds, center: { lat: n
   return null
 }
 
-export function CityStep({ onConfirm, initial, keyword, onKeywordChange }: Props) {
+export function CityStep({ onConfirm, initial }: Props) {
   const [query, setQuery] = useState('')
   const [hits, setHits] = useState<GeocodeHit[]>([])
   const [searching, setSearching] = useState(false)
@@ -291,16 +289,6 @@ export function CityStep({ onConfirm, initial, keyword, onKeywordChange }: Props
         </MapContainer>
         <p className="map-hint">Pan and zoom — the visible area becomes your search box.</p>
       </div>
-
-      <label className="field keyword-field">
-        <span>Keyword search (optional)</span>
-        <input
-          value={keyword}
-          onChange={(e) => onKeywordChange(e.target.value)}
-          placeholder='e.g. "wild caught fish", "grass fed steak", "organic salad"'
-          autoComplete="off"
-        />
-      </label>
 
       <div className="step-actions row">
         <button type="button" className="btn primary" onClick={() => void confirmMapArea()}>
