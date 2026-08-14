@@ -23,9 +23,10 @@ export type PlaceRatings = {
 }
 
 const CACHE_TTL = 1000 * 60 * 60 * 24 * 7 // 7 days
+const CACHE_VERSION = 'v2' // bump when rating sources change
 
 function cacheKey(place: Restaurant, cityLabel: string, source: string): string {
-  return `rating:${source}:${place.id}:${cityLabel.slice(0, 40)}`
+  return `rating:${CACHE_VERSION}:${source}:${place.id}:${cityLabel.slice(0, 40)}`
 }
 
 function emptyRatings(place: Restaurant, cityLabel: string): PlaceRatings {
