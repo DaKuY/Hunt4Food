@@ -98,7 +98,7 @@ function SearchFlow() {
   const { ratingsMap, ratingsLoading } = usePlaceRatings(places, city?.label ?? '', step === 'results' && places.length > 0)
   const { seedOilMap, seedOilLoading } = usePlaceSeedOil(
     places,
-    step === 'results' && places.length > 0,
+    step === 'results' && places.length > 0 && dietary.includes('no_seed_oils'),
   )
   const { dishesMap, dishesLoading } = usePlaceDishes(
     places,

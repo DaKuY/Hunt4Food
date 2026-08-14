@@ -40,7 +40,7 @@ function buildQuery(bounds: MapBounds, cuisines: CuisineId[]): string {
   const nameRegex = Array.from(new Set(keywordBits)).map(escapeRegex).join('|')
 
   return `
-[out:json][timeout:45];
+[out:json][timeout:18];
 (
   nwr${amenityFilter}${cuisineClause}(${bbox});
   nwr${amenityFilter}["name"~"${nameRegex}",i](${bbox});
@@ -124,7 +124,7 @@ async function fetchMirror(
   const onAbort = () => controller.abort()
   signal?.addEventListener('abort', onAbort)
 
-  const timer = setTimeout(() => controller.abort(), 35000)
+  const timer = setTimeout(() => controller.abort(), 10000)
   try {
     const res = await fetch(mirror, {
       method: 'POST',
@@ -154,17 +154,33 @@ export async function fetchRestaurants(
   if (cached) return cached
 
   const query = buildQuery(bounds, cuisines)
-  let lastError: unknown
-  for (const mirror of MIRRORS) {
-    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
-    try {
-      const places = await fetchMirror(mirror, query, signal)
-      writeCache(key, places, CACHE_TTL_MS)
-      return places
-    } catch (err) {
-      if ((err as Error)?.name === 'AbortError') throw err
-      lastError = err
-    }
+  const raceCtrl = new AbortController()
+  const onAbort = () => raceCtrl.abort()
+  signal?.addEventListener('abort', onAbort)
+
+  try {
+    const places = await new Promise<Restaurant[]>((resolve, reject) => {
+      let pending = MIRRORS.length
+      let settled = false
+      for (const mirror of MIRRORS) {
+        void fetchMirror(mirror, query, raceCtrl.signal)
+          .then((result) => {
+            if (settled) return
+            settled = true
+            raceCtrl.abort()
+            resolve(result)
+          })
+          .catch((err) => {
+            pending -= 1
+            if (pending === 0 && !settled) {
+              reject(err instanceof Error ? err : new Error('All Overpass mirrors failed'))
+            }
+          })
+      }
+    })
+    writeCache(key, places, CACHE_TTL_MS)
+    return places
+  } finally {
+    signal?.removeEventListener('abort', onAbort)
   }
-  throw lastError instanceof Error ? lastError : new Error('All Overpass mirrors failed')
 }

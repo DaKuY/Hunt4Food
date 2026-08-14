@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { fetchPlaceRatings, readCachedPlaceRatings, type PlaceRatings } from '../lib/ratings'
+import { mapPool } from '../lib/pool'
 import type { RankedRestaurant } from '../lib/types'
 
 function seedFromCache(places: RankedRestaurant[], cityLabel: string): Record<string, PlaceRatings> {
@@ -16,36 +17,41 @@ export function usePlaceRatings(places: RankedRestaurant[], cityLabel: string, e
     enabled ? seedFromCache(places, cityLabel) : {},
   )
   const [loading, setLoading] = useState(false)
+  const placesRef = useRef(places)
+  placesRef.current = places
   const placeIds = places.map((p) => p.id).join(',')
 
   useEffect(() => {
-    if (!enabled || places.length === 0) return
+    if (!enabled || !placeIds) return
+    const list = placesRef.current
     const ctrl = new AbortController()
-    setMap(seedFromCache(places, cityLabel))
+    setMap(seedFromCache(list, cityLabel))
     setLoading(true)
 
-    void (async () => {
-      for (const place of places) {
-        if (ctrl.signal.aborted) break
+    void mapPool(
+      list,
+      5,
+      async (place) => {
+        if (ctrl.signal.aborted) return
         try {
           const ratings = await fetchPlaceRatings(place, cityLabel, ctrl.signal)
-          setMap((prev) => ({ ...prev, [place.id]: ratings }))
+          if (!ctrl.signal.aborted) {
+            setMap((prev) => ({ ...prev, [place.id]: ratings }))
+          }
         } catch {
           // skip
         }
-        const cached = readCachedPlaceRatings(place, cityLabel)
-        if (!cached) {
-          await new Promise((r) => setTimeout(r, 350))
-        }
-      }
+      },
+      ctrl.signal,
+    ).then(() => {
       if (!ctrl.signal.aborted) setLoading(false)
-    })()
+    })
 
     return () => {
       ctrl.abort()
       setLoading(false)
     }
-  }, [placeIds, cityLabel, enabled, places])
+  }, [placeIds, cityLabel, enabled])
 
   return { ratingsMap: map, ratingsLoading: loading }
 }
