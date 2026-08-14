@@ -46,5 +46,5 @@ export function cityCuisineFallbackLinks(
 
 export function buildSearchShareUrl(params: URLSearchParams): string {
   const qs = params.toString()
-  return `${window.location.origin}${window.location.pathname}#/search${qs ? `?${qs}` : ''}`
+  return `${window.location.origin}${window.location.pathname}#/${qs ? `?${qs}` : ''}`
 }

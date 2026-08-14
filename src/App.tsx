@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { HashRouter, Link, Navigate, Route, Routes, useNavigate, useSearchParams } from 'react-router-dom'
+import { HashRouter, Link, Navigate, Route, Routes, useSearchParams } from 'react-router-dom'
 import { cuisineById, isKnownCuisineId, isKnownDietaryId } from './data/cuisines'
 import { usePlaceDishes } from './hooks/usePlaceDishes'
 import { usePlaceRatings } from './hooks/usePlaceRatings'
@@ -50,28 +50,6 @@ function cityFromParams(params: URLSearchParams): CitySelection | null {
 function useTaste() {
   const [taste, setTaste] = useState<TasteProfile>(() => loadTaste())
   return { taste, setTaste }
-}
-
-function Home() {
-  const navigate = useNavigate()
-  return (
-    <section className="hero">
-      <p className="brand">OpenPlate</p>
-      <h1>Find places that actually fit what you like to eat.</h1>
-      <p className="hero-lede">
-        Pick a city on the map, choose up to three cuisines, and get ten ranked spots — with Google, Yelp,
-        and TripAdvisor ratings.
-      </p>
-      <div className="hero-actions">
-        <button type="button" className="btn primary" onClick={() => navigate('/search')}>
-          Start searching
-        </button>
-        <Link className="btn ghost" to="/taste">
-          My Taste
-        </Link>
-      </div>
-    </section>
-  )
 }
 
 function SearchFlow() {
@@ -461,7 +439,7 @@ function ShortlistView() {
           ))}
         </ul>
       )}
-      <Link className="btn primary" to="/search">
+      <Link className="btn primary" to="/">
         Start your own search
       </Link>
     </section>
@@ -482,15 +460,14 @@ function Shell() {
           OpenPlate
         </Link>
         <nav>
-          <Link to="/search">Search</Link>
           <Link to="/taste">My Taste</Link>
           <Link to="/settings">Settings</Link>
         </nav>
       </header>
       <main>
         <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/search" element={<SearchFlow />} />
+          <Route path="/" element={<SearchFlow />} />
+          <Route path="/search" element={<Navigate to="/" replace />} />
           <Route path="/taste" element={<TasteRoute />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/shortlist" element={<ShortlistView />} />
