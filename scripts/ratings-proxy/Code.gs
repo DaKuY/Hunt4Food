@@ -160,56 +160,69 @@ function parseYelpDishesFromHtml_(html) {
 function fetchTripAdvisor_(name, city) {
   var searchFallback =
     'https://www.tripadvisor.com/Search?q=' + encodeURIComponent(name + ' ' + city + ' restaurant');
+  var ua =
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
-  // TripAdvisor blocks direct scraping; DuckDuckGo lite exposes rating snippets.
-  var ddgUrl =
-    'https://lite.duckduckgo.com/lite/?q=' +
-    encodeURIComponent(name + ' ' + city + ' tripadvisor restaurant');
+  var queries = [
+    name + ' ' + city + ' tripadvisor restaurant',
+    '"' + name + '" ' + city + ' site:tripadvisor.com restaurant',
+  ];
+
+  for (var q = 0; q < queries.length; q++) {
+    var parsed = fetchTripAdvisorFromDdg_(queries[q], searchFallback, ua);
+    if (parsed && parsed.rating != null) return parsed;
+  }
+
+  // Bing fallback
+  var bingUrl =
+    'https://www.bing.com/search?q=' + encodeURIComponent(name + ' ' + city + ' site:tripadvisor.com restaurant');
+  var bingHtml = UrlFetchApp.fetch(bingUrl, {
+    muteHttpExceptions: true,
+    headers: { 'User-Agent': ua },
+  }).getContentText();
+  parsed = parseTripAdvisorSnippet_(bingHtml, searchFallback);
+  if (parsed && parsed.rating != null) return parsed;
+
+  return { rating: null, reviewCount: null, url: searchFallback };
+}
+
+function fetchTripAdvisorFromDdg_(query, searchFallback, ua) {
+  var ddgUrl = 'https://html.duckduckgo.com/html/?q=' + encodeURIComponent(query);
   var html = UrlFetchApp.fetch(ddgUrl, {
     muteHttpExceptions: true,
-    headers: {
-      'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    },
+    headers: { 'User-Agent': ua },
   }).getContentText();
+  return parseTripAdvisorSnippet_(html, searchFallback);
+}
 
-  var ratingMatch = html.match(/rated\s+(\d+(?:\.\d+)?)\s+of\s+5\s+on\s+Tripadvisor/i);
-  var countMatch = html.match(/See\s+(\d[\d,]*)\s+unbiased reviews/i);
-  var linkMatch = html.match(/uddg=(https[^&]*tripadvisor\.com[^&]*Restaurant_Review[^&]*)/i);
+function parseTripAdvisorSnippet_(html, searchFallback) {
+  var text = html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ');
+
+  var ratingMatch = text.match(/rated\s+(\d+(?:\.\d+)?)\s+of\s+5\s+on\s+Tripadvisor/i);
+  var countMatch = text.match(/See\s+(\d[\d,]*)\s+unbiased reviews/i);
+  var linkMatch = html.match(/uddg=(https[^&"'\\]*tripadvisor\.com[^&"'\\]*Restaurant_Review[^&"'\\]*)/i);
+  if (!linkMatch) {
+    linkMatch = html.match(/href="(https:\/\/www\.tripadvisor\.com\/Restaurant_Review[^"]+)"/i);
+  }
 
   var url = searchFallback;
   if (linkMatch) {
     try {
-      url = decodeURIComponent(linkMatch[1]);
+      url = decodeURIComponent(linkMatch[1].replace(/&amp;/g, '&'));
     } catch (e) {
-      url = searchFallback;
+      url = linkMatch[1].replace(/&amp;/g, '&');
     }
   }
 
-  if (ratingMatch) {
-    return {
-      rating: Number(ratingMatch[1]),
-      reviewCount: countMatch ? Number(String(countMatch[1]).replace(/,/g, '')) : null,
-      url: url,
-    };
-  }
+  if (!ratingMatch) return null;
 
-  // Fallback: direct TA search (often blocked, but cheap to try)
-  var taHtml = UrlFetchApp.fetch(searchFallback, {
-    muteHttpExceptions: true,
-    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; OpenPlate/1.0)' },
-  }).getContentText();
-  var bubble = taHtml.match(/bubble_rating rating-(\d+)/);
-  var rating = bubble ? Number(bubble[1]) / 10 : null;
-  if (!rating) {
-    var jsonRating = taHtml.match(/"rating":\s*(\d+(?:\.\d+)?)/);
-    if (jsonRating) rating = Number(jsonRating[1]);
-  }
-  var taCount = taHtml.match(/(\d[\d,]*)\s+reviews/i) || taHtml.match(/"num_reviews":\s*(\d+)/);
-  var taLink = taHtml.match(/href="(https:\/\/www\.tripadvisor\.com\/Restaurant_Review[^"]+)"/);
   return {
-    rating: rating,
-    reviewCount: taCount ? Number(String(taCount[1]).replace(/,/g, '')) : null,
-    url: taLink ? taLink[1].replace(/&amp;/g, '&') : url,
+    rating: Number(ratingMatch[1]),
+    reviewCount: countMatch ? Number(String(countMatch[1]).replace(/,/g, '')) : null,
+    url: url,
   };
 }
