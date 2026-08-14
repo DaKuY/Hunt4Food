@@ -100,7 +100,7 @@ export function ResultsStep({
         <h2>Ten places worth checking</h2>
         <p className="lede">
           Ranked from OpenStreetMap for your area and taste. Star <strong>Favorite</strong> places you
-          want to keep, then <strong>Search again</strong> to swap out the rest for fresh options.
+          want to keep, then <strong>Find more restaurants</strong> to swap out the rest for fresh options.
         </p>
       </header>
 
@@ -122,7 +122,7 @@ export function ResultsStep({
         </button>
         {!loading && filtered.length > 0 && (
           <button type="button" className="chip primary" onClick={onSearchAgain}>
-            Search again{favoriteCount > 0 ? ` (keep ${favoriteCount} favorite${favoriteCount === 1 ? '' : 's'})` : ''}
+            Find more restaurants{favoriteCount > 0 ? ` (keep ${favoriteCount} favorite${favoriteCount === 1 ? '' : 's'})` : ''}
           </button>
         )}
       </div>
@@ -292,7 +292,7 @@ export function ResultsStep({
       <div className="step-actions row">
         {!loading && filtered.length > 0 && (
           <button type="button" className="btn primary" onClick={onSearchAgain}>
-            Search again
+            Find more restaurants
           </button>
         )}
         <button type="button" className="btn ghost" onClick={onBack}>
