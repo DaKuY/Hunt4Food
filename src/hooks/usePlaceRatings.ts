@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import { fetchPlaceRatings, readCachedPlaceRatings, type PlaceRatings } from '../lib/ratings'
+import {
+  emptyPlaceRatings,
+  fetchGoogleRating,
+  fetchTripadvisorRating,
+  fetchYelpRating,
+  readCachedPlaceRatings,
+  withPlacePrice,
+  type PlaceRatings,
+} from '../lib/ratings'
 import { mapPool } from '../lib/pool'
 import type { RankedRestaurant } from '../lib/types'
 
@@ -28,24 +36,70 @@ export function usePlaceRatings(places: RankedRestaurant[], cityLabel: string, e
     setMap(seedFromCache(list, cityLabel))
     setLoading(true)
 
-    void mapPool(
-      list,
-      5,
-      async (place) => {
-        if (ctrl.signal.aborted) return
-        try {
-          const ratings = await fetchPlaceRatings(place, cityLabel, ctrl.signal)
-          if (!ctrl.signal.aborted) {
-            setMap((prev) => ({ ...prev, [place.id]: ratings }))
+    void (async () => {
+      await mapPool(
+        list,
+        8,
+        async (place) => {
+          if (ctrl.signal.aborted) return
+          try {
+            const google = await fetchGoogleRating(place, cityLabel, ctrl.signal)
+            if (ctrl.signal.aborted) return
+            setMap((prev) => {
+              const base = prev[place.id] ?? emptyPlaceRatings(place, cityLabel)
+              return { ...prev, [place.id]: withPlacePrice({ ...base, google }) }
+            })
+          } catch {
+            // skip
           }
-        } catch {
-          // skip
-        }
-      },
-      ctrl.signal,
-    ).then(() => {
+        },
+        ctrl.signal,
+      )
+
+      if (ctrl.signal.aborted) return
+
+      await mapPool(
+        list,
+        4,
+        async (place) => {
+          if (ctrl.signal.aborted) return
+          try {
+            const yelp = await fetchYelpRating(place, cityLabel, ctrl.signal)
+            if (ctrl.signal.aborted) return
+            setMap((prev) => {
+              const base = prev[place.id] ?? emptyPlaceRatings(place, cityLabel)
+              return { ...prev, [place.id]: withPlacePrice({ ...base, yelp }) }
+            })
+          } catch {
+            // skip
+          }
+        },
+        ctrl.signal,
+      )
+
+      if (ctrl.signal.aborted) return
+
+      await mapPool(
+        list,
+        3,
+        async (place) => {
+          if (ctrl.signal.aborted) return
+          try {
+            const tripadvisor = await fetchTripadvisorRating(place, cityLabel, ctrl.signal)
+            if (ctrl.signal.aborted) return
+            setMap((prev) => {
+              const base = prev[place.id] ?? emptyPlaceRatings(place, cityLabel)
+              return { ...prev, [place.id]: withPlacePrice({ ...base, tripadvisor }) }
+            })
+          } catch {
+            // skip
+          }
+        },
+        ctrl.signal,
+      )
+
       if (!ctrl.signal.aborted) setLoading(false)
-    })
+    })()
 
     return () => {
       ctrl.abort()

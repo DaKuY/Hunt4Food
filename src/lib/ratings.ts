@@ -141,44 +141,54 @@ async function fetchGooglePlacesRating(
     maxResultCount: 1,
   }
 
-  const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
-    method: 'POST',
-    signal,
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Goog-Api-Key': apiKey,
-      'X-Goog-FieldMask':
-        'places.displayName,places.rating,places.userRatingCount,places.googleMapsUri,places.priceLevel',
-    },
-    body: JSON.stringify(body),
-  })
+  const timeout = new AbortController()
+  const timer = setTimeout(() => timeout.abort(), 6000)
+  const onAbort = () => timeout.abort()
+  signal?.addEventListener('abort', onAbort)
 
-  if (!res.ok) throw new Error(`Google Places ${res.status}`)
-  const data = (await res.json()) as {
-    places?: Array<{
-      displayName?: { text?: string }
-      rating?: number
-      userRatingCount?: number
-      googleMapsUri?: string
-      priceLevel?: string
-    }>
-  }
+  try {
+    const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
+      method: 'POST',
+      signal: timeout.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': apiKey,
+        'X-Goog-FieldMask':
+          'places.displayName,places.rating,places.userRatingCount,places.googleMapsUri,places.priceLevel',
+      },
+      body: JSON.stringify(body),
+    })
 
-  const hit = data.places?.[0]
-  const fallbackUrl = googleMapsUrl(place, cityLabel)
-  if (!hit) {
-    return { rating: null, reviewCount: null, url: fallbackUrl, priceLevel: null, priceLabel: null }
-  }
+    if (!res.ok) throw new Error(`Google Places ${res.status}`)
+    const data = (await res.json()) as {
+      places?: Array<{
+        displayName?: { text?: string }
+        rating?: number
+        userRatingCount?: number
+        googleMapsUri?: string
+        priceLevel?: string
+      }>
+    }
 
-  const priceLevel = googlePriceLevel(hit.priceLevel)
-  const priceLabel = priceLevel != null ? mergePrice(priceLevel, null).label : null
+    const hit = data.places?.[0]
+    const fallbackUrl = googleMapsUrl(place, cityLabel)
+    if (!hit) {
+      return { rating: null, reviewCount: null, url: fallbackUrl, priceLevel: null, priceLabel: null }
+    }
 
-  return {
-    rating: hit.rating ?? null,
-    reviewCount: hit.userRatingCount ?? null,
-    url: hit.googleMapsUri ?? fallbackUrl,
-    priceLevel,
-    priceLabel,
+    const priceLevel = googlePriceLevel(hit.priceLevel)
+    const priceLabel = priceLevel != null ? mergePrice(priceLevel, null).label : null
+
+    return {
+      rating: hit.rating ?? null,
+      reviewCount: hit.userRatingCount ?? null,
+      url: hit.googleMapsUri ?? fallbackUrl,
+      priceLevel,
+      priceLabel,
+    }
+  } finally {
+    clearTimeout(timer)
+    signal?.removeEventListener('abort', onAbort)
   }
 }
 
@@ -265,6 +275,30 @@ async function resolveGoogleRating(
 
   if (signal?.aborted) return base
 
+  const settings = loadSettings()
+  if (settings.googlePlacesApiKey && getGoogleQuota().canRequest) {
+    try {
+      const data = await fetchGooglePlacesRating(place, cityLabel, settings.googlePlacesApiKey, signal)
+      if (!consumeGoogleQuota()) {
+        const result = { ...base, error: googleQuotaMessage() }
+        writeSourceCache(place, cityLabel, 'google', result)
+        return result
+      }
+      const result: SourceRating = { ...base, ...data }
+      writeSourceCache(place, cityLabel, 'google', result)
+      return result
+    } catch (e) {
+      if (signal?.aborted) return base
+      // Referrer-blocked keys fall through to the Apps Script proxy
+      const blocked = (e as Error).message.includes('403')
+      if (!blocked && ratingsProxyUrl() === '') {
+        const result: SourceRating = { ...base, error: 'Google rating unavailable' }
+        writeSourceCache(place, cityLabel, 'google', result)
+        return result
+      }
+    }
+  }
+
   if (ratingsProxyUrl()) {
     try {
       const data = await fetchProxyRating('google', place, cityLabel)
@@ -272,41 +306,27 @@ async function resolveGoogleRating(
       writeSourceCache(place, cityLabel, 'google', result)
       return result
     } catch {
-      // proxy unreachable — try browser Google call
+      // continue to error
     }
   }
 
-  const settings = loadSettings()
-  if (!settings.googlePlacesApiKey) {
-    const result = { ...base, error: 'Google Places key not configured' }
-    writeSourceCache(place, cityLabel, 'google', result)
-    return result
+  const result: SourceRating = {
+    ...base,
+    error: settings.googlePlacesApiKey
+      ? 'Google rating unavailable'
+      : 'Google Places key not configured',
   }
-  if (!getGoogleQuota().canRequest) {
-    const result = { ...base, error: googleQuotaMessage() }
-    writeSourceCache(place, cityLabel, 'google', result)
-    return result
-  }
-
-  try {
-    const data = await fetchGooglePlacesRating(place, cityLabel, settings.googlePlacesApiKey, signal)
-    if (!consumeGoogleQuota()) {
-      const result = { ...base, error: googleQuotaMessage() }
-      writeSourceCache(place, cityLabel, 'google', result)
-      return result
-    }
-    const result: SourceRating = { ...base, ...data }
-    writeSourceCache(place, cityLabel, 'google', result)
-    return result
-  } catch (e) {
-    const msg = (e as Error).message.includes('403')
-      ? 'Google blocked — redeploy ratings proxy (Settings)'
-      : 'Google rating unavailable'
-    const result: SourceRating = { ...base, error: msg }
-    writeSourceCache(place, cityLabel, 'google', result)
-    return result
-  }
+  writeSourceCache(place, cityLabel, 'google', result)
+  return result
 }
+
+export { emptyRatings as emptyPlaceRatings, withPrice as withPlacePrice }
+
+export const fetchGoogleRating = resolveGoogleRating
+export const fetchYelpRating = (place: Restaurant, cityLabel: string, signal?: AbortSignal) =>
+  resolveProxyRating('yelp', place, cityLabel, signal)
+export const fetchTripadvisorRating = (place: Restaurant, cityLabel: string, signal?: AbortSignal) =>
+  resolveProxyRating('tripadvisor', place, cityLabel, signal)
 
 async function resolveProxyRating(
   source: 'yelp' | 'tripadvisor',
