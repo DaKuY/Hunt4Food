@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { HashRouter, Link, Navigate, Route, Routes, useNavigate, useSearchParams } from 'react-router-dom'
 import { cuisineById } from './data/cuisines'
+import { usePlaceDishes } from './hooks/usePlaceDishes'
 import { usePlaceRatings } from './hooks/usePlaceRatings'
 import { buildSearchShareUrl } from './lib/links'
 import { pruneExpiredCache } from './lib/storage'
@@ -94,6 +95,9 @@ function SearchFlow() {
     return taste.dietaryPrefs
   })
   const [rawPlaces, setRawPlaces] = useState<Restaurant[]>([])
+  const [displayPlaces, setDisplayPlaces] = useState<RankedRestaurant[]>([])
+  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(() => new Set())
+  const [seenIds, setSeenIds] = useState<Set<string>>(() => new Set())
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [openNowOnly, setOpenNowOnly] = useState(false)
@@ -105,18 +109,15 @@ function SearchFlow() {
   const tasteRef = useRef(taste)
   tasteRef.current = taste
 
-  const places = useMemo(() => {
-    if (!city || rawPlaces.length === 0) return [] as RankedRestaurant[]
-    return rankRestaurants(rawPlaces, {
-      center: city.center,
-      selectedCuisines: cuisines,
-      dietary,
-      taste,
-      limit: 10,
-    })
-  }, [rawPlaces, city, cuisines, dietary, taste])
+  const places = displayPlaces
 
   const { ratingsMap, ratingsLoading } = usePlaceRatings(places, city?.label ?? '', step === 'results' && places.length > 0)
+  const { dishesMap, dishesLoading } = usePlaceDishes(
+    places,
+    city?.label ?? '',
+    cuisines,
+    step === 'results' && places.length > 0,
+  )
 
   useEffect(() => {
     return () => {
@@ -125,7 +126,7 @@ function SearchFlow() {
   }, [])
 
   const runSearch = useCallback(
-    async (selection: CitySelection, food: CuisineId[]) => {
+    async (selection: CitySelection, food: CuisineId[], dietaryPrefs: DietaryId[]) => {
       searchAbortRef.current?.abort()
       const ctrl = new AbortController()
       searchAbortRef.current = ctrl
@@ -133,14 +134,27 @@ function SearchFlow() {
       setError(null)
       setStep('results')
       setRawPlaces([])
+      setDisplayPlaces([])
+      setFavoriteIds(new Set())
+      setSeenIds(new Set())
       try {
         const raw = await fetchRestaurants(selection.bounds, food, ctrl.signal)
         if (ctrl.signal.aborted) return
         setRawPlaces(raw)
+        const ranked = rankRestaurants(raw, {
+          center: selection.center,
+          selectedCuisines: food,
+          dietary: dietaryPrefs,
+          taste: tasteRef.current,
+          limit: 10,
+        })
+        setDisplayPlaces(ranked)
+        setSeenIds(new Set(ranked.map((p) => p.id)))
       } catch (e) {
         if ((e as Error).name === 'AbortError' || ctrl.signal.aborted) return
         setError('Could not reach OpenStreetMap right now. Try again in a minute, or use Google / Yelp below.')
         setRawPlaces([])
+        setDisplayPlaces([])
       } finally {
         if (!ctrl.signal.aborted) setLoading(false)
       }
@@ -148,12 +162,59 @@ function SearchFlow() {
     [],
   )
 
+  const searchAgain = useCallback(async () => {
+    if (!city || cuisines.length === 0) return
+    searchAbortRef.current?.abort()
+    const ctrl = new AbortController()
+    searchAbortRef.current = ctrl
+    setLoading(true)
+    setError(null)
+
+    const favorites = displayPlaces.filter((p) => favoriteIds.has(p.id))
+    const nextSeen = new Set(seenIds)
+    displayPlaces.forEach((p) => {
+      if (!favoriteIds.has(p.id)) nextSeen.add(p.id)
+    })
+
+    try {
+      let pool = rawPlaces
+      if (pool.length === 0) {
+        pool = await fetchRestaurants(city.bounds, cuisines, ctrl.signal)
+        if (ctrl.signal.aborted) return
+        setRawPlaces(pool)
+      }
+
+      const slots = Math.max(0, 10 - favorites.length)
+      const fresh =
+        slots > 0
+          ? rankRestaurants(pool, {
+              center: city.center,
+              selectedCuisines: cuisines,
+              dietary,
+              taste,
+              limit: slots + 15,
+              excludeIds: nextSeen,
+            }).slice(0, slots)
+          : []
+
+      fresh.forEach((p) => nextSeen.add(p.id))
+      setDisplayPlaces([...favorites, ...fresh])
+      setSeenIds(nextSeen)
+      setFavoriteIds(new Set(favorites.map((p) => p.id)))
+    } catch (e) {
+      if ((e as Error).name === 'AbortError' || ctrl.signal.aborted) return
+      setError('Could not fetch more places. Try again in a minute.')
+    } finally {
+      if (!ctrl.signal.aborted) setLoading(false)
+    }
+  }, [city, cuisines, dietary, taste, displayPlaces, favoriteIds, seenIds, rawPlaces])
+
   // Auto-run when shared URL has city + cuisines
   useEffect(() => {
     if (autoRanRef.current || !restored || initialCuisines.length === 0) return
     autoRanRef.current = true
-    void runSearch(restored, initialCuisines)
-  }, [restored, initialCuisines, runSearch])
+    void runSearch(restored, initialCuisines, dietary)
+  }, [restored, initialCuisines, dietary, runSearch])
 
   function confirmCity(selection: CitySelection) {
     setCity(selection)
@@ -180,7 +241,7 @@ function SearchFlow() {
       next.set('dietary', dietary.join(','))
       return next
     })
-    void runSearch(city, cuisines)
+    void runSearch(city, cuisines, dietary)
   }
 
   async function copySearchLink() {
@@ -230,13 +291,25 @@ function SearchFlow() {
           hasWebsiteOnly={hasWebsiteOnly}
           ratingsMap={ratingsMap}
           ratingsLoading={ratingsLoading}
+          dishesMap={dishesMap}
+          dishesLoading={dishesLoading}
+          favoriteIds={favoriteIds}
+          onToggleFavorite={(place) => {
+            setFavoriteIds((prev) => {
+              const next = new Set(prev)
+              if (next.has(place.id)) next.delete(place.id)
+              else next.add(place.id)
+              return next
+            })
+          }}
+          onSearchAgain={() => void searchAgain()}
           onToggleOpenNow={() => setOpenNowOnly((v) => !v)}
           onToggleWebsite={() => setHasWebsiteOnly((v) => !v)}
           lovedIds={lovedIds}
           shortlistedIds={shortlistedIds}
           shareMessage={shareMessage}
           onCopySearchLink={() => void copySearchLink()}
-          onRetry={() => void runSearch(city, cuisines)}
+          onRetry={() => void runSearch(city, cuisines, dietary)}
           onLove={(place) => {
             setTaste(
               lovePlace(taste, {
@@ -261,6 +334,14 @@ function SearchFlow() {
               }),
             )
             setRawPlaces((prev) => prev.filter((p) => p.id !== place.id))
+            setDisplayPlaces((prev) => prev.filter((p) => p.id !== place.id))
+            setFavoriteIds((prev) => {
+              if (!prev.has(place.id)) return prev
+              const next = new Set(prev)
+              next.delete(place.id)
+              return next
+            })
+            setSeenIds((prev) => new Set(prev).add(place.id))
           }}
           onShortlist={(place) => {
             setShortlist(
@@ -277,6 +358,9 @@ function SearchFlow() {
           onNewSearch={() => {
             setStep('city')
             setRawPlaces([])
+            setDisplayPlaces([])
+            setFavoriteIds(new Set())
+            setSeenIds(new Set())
             autoRanRef.current = false
           }}
         />

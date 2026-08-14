@@ -26,6 +26,11 @@ type Props = {
   hasWebsiteOnly: boolean
   ratingsMap: Record<string, PlaceRatings>
   ratingsLoading: boolean
+  dishesMap: Record<string, string[]>
+  dishesLoading: boolean
+  favoriteIds: Set<string>
+  onToggleFavorite: (place: RankedRestaurant) => void
+  onSearchAgain: () => void
   onToggleOpenNow: () => void
   onToggleWebsite: () => void
   onLove: (place: RankedRestaurant) => void
@@ -51,6 +56,11 @@ export function ResultsStep({
   hasWebsiteOnly,
   ratingsMap,
   ratingsLoading,
+  dishesMap,
+  dishesLoading,
+  favoriteIds,
+  onToggleFavorite,
+  onSearchAgain,
   onToggleOpenNow,
   onToggleWebsite,
   onLove,
@@ -73,6 +83,7 @@ export function ResultsStep({
     return true
   })
 
+  const favoriteCount = places.filter((p) => favoriteIds.has(p.id)).length
   const fallback = cityCuisineFallbackLinks(cityLabel, cuisineLabels)
 
   return (
@@ -81,8 +92,8 @@ export function ResultsStep({
         <p className="eyebrow">Your top picks · {cityLabel}</p>
         <h2>Ten places worth checking</h2>
         <p className="lede">
-          Ranked from OpenStreetMap for your area and taste. Ratings from Google, Yelp, and TripAdvisor
-          load below each place.
+          Ranked from OpenStreetMap for your area and taste. Star <strong>Favorite</strong> places you
+          want to keep, then <strong>Search again</strong> to swap out the rest for fresh options.
         </p>
       </header>
 
@@ -102,6 +113,11 @@ export function ResultsStep({
         <button type="button" className="chip ghost" onClick={onCopySearchLink}>
           Copy search link
         </button>
+        {!loading && filtered.length > 0 && (
+          <button type="button" className="chip primary" onClick={onSearchAgain}>
+            Search again{favoriteCount > 0 ? ` (keep ${favoriteCount} favorite${favoriteCount === 1 ? '' : 's'})` : ''}
+          </button>
+        )}
       </div>
 
       {loading && (
@@ -163,11 +179,16 @@ export function ResultsStep({
         {filtered.map((place, index) => {
           const menu = menuOrWebsiteUrl(place, cityLabel)
           const ratings = ratingsMap[place.id] ?? null
+          const dishes = dishesMap[place.id]
+          const isFavorite = favoriteIds.has(place.id)
           return (
-            <li key={place.id} className="result-card">
+            <li key={place.id} className={`result-card${isFavorite ? ' result-card--favorite' : ''}`}>
               <div className="result-rank">{index + 1}</div>
               <div className="result-body">
-                <h3>{place.name}</h3>
+                <h3>
+                  {place.name}
+                  {isFavorite && <span className="favorite-badge">Favorite</span>}
+                </h3>
                 <p className="meta">
                   {place.cuisines.slice(0, 3).join(' · ') || place.amenity || 'Restaurant'}
                   {place.distanceKm < 50 ? ` · ${place.distanceKm.toFixed(1)} km` : ''}
@@ -180,6 +201,14 @@ export function ResultsStep({
                   ) : null}
                 </p>
                 <RatingsRow ratings={ratings} loading={ratingsLoading && !ratings} />
+                {dishes?.length ? (
+                  <p className="popular-dishes">
+                    <span className="popular-dishes-label">Popular dishes</span>
+                    {dishes.join(' · ')}
+                  </p>
+                ) : dishesLoading ? (
+                  <p className="popular-dishes muted">Loading popular dishes…</p>
+                ) : null}
                 <ul className="reasons">
                   {place.reasons.map((r) => (
                     <li key={r}>{r}</li>
@@ -200,6 +229,13 @@ export function ResultsStep({
                   </a>
                 </div>
                 <div className="card-actions">
+                  <button
+                    type="button"
+                    className={`btn tiny ${isFavorite ? 'primary' : 'ghost'}`}
+                    onClick={() => onToggleFavorite(place)}
+                  >
+                    {isFavorite ? '★ Favorited' : '☆ Favorite'}
+                  </button>
                   <button
                     type="button"
                     className={`btn tiny ${lovedIds.has(place.id) ? 'primary' : 'ghost'}`}
@@ -225,6 +261,11 @@ export function ResultsStep({
       </ol>
 
       <div className="step-actions row">
+        {!loading && filtered.length > 0 && (
+          <button type="button" className="btn primary" onClick={onSearchAgain}>
+            Search again
+          </button>
+        )}
         <button type="button" className="btn ghost" onClick={onBack}>
           Change food
         </button>

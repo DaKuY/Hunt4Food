@@ -18,11 +18,12 @@ function doGet(e) {
   var lat = parseFloat(p.lat);
   var lon = parseFloat(p.lon);
   var callback = p.callback;
+  var wantDishes = p.dishes === '1' || p.dishes === 'true';
 
   var result;
   try {
     if (source === 'yelp') {
-      result = fetchYelp_(name, city, lat, lon);
+      result = fetchYelp_(name, city, lat, lon, wantDishes);
     } else if (source === 'tripadvisor') {
       result = fetchTripAdvisor_(name, city);
     } else {
@@ -41,7 +42,7 @@ function doGet(e) {
   return ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);
 }
 
-function fetchYelp_(name, city, lat, lon) {
+function fetchYelp_(name, city, lat, lon, wantDishes) {
   var props = PropertiesService.getScriptProperties();
   var apiKey = props.getProperty('YELP_API_KEY');
   var searchUrl =
@@ -67,11 +68,15 @@ function fetchYelp_(name, city, lat, lon) {
       var data = JSON.parse(resp.getContentText());
       var biz = data.businesses && data.businesses[0];
       if (biz) {
-        return {
+        var out = {
           rating: biz.rating || null,
           reviewCount: biz.review_count || null,
           url: biz.url || searchUrl,
         };
+        if (wantDishes) {
+          out.dishes = fetchYelpDishes_(biz.id, biz.url || searchUrl, apiKey);
+        }
+        return out;
       }
     }
   }
@@ -84,11 +89,72 @@ function fetchYelp_(name, city, lat, lon) {
   var ratingMatch = html.match(/"rating":\s*(\d+(?:\.\d+)?)/);
   var countMatch = html.match(/"reviewCount":\s*(\d+)/);
   var bizMatch = html.match(/href="(\/biz\/[^"?]+)/);
-  return {
+  var out = {
     rating: ratingMatch ? Number(ratingMatch[1]) : null,
     reviewCount: countMatch ? Number(countMatch[1]) : null,
     url: bizMatch ? 'https://www.yelp.com' + bizMatch[1] : searchUrl,
   };
+  if (wantDishes) {
+    out.dishes = parseYelpDishesFromHtml_(html);
+  }
+  return out;
+}
+
+function fetchYelpDishes_(bizId, bizUrl, apiKey) {
+  if (bizId && apiKey) {
+    var detailUrl = 'https://api.yelp.com/v3/businesses/' + encodeURIComponent(bizId);
+    var resp = UrlFetchApp.fetch(detailUrl, {
+      headers: { Authorization: 'Bearer ' + apiKey },
+      muteHttpExceptions: true,
+    });
+    if (resp.getResponseCode() === 200) {
+      var data = JSON.parse(resp.getContentText());
+      if (data.categories && data.categories.length) {
+        // No dish list in API — try business page
+      }
+    }
+  }
+  if (bizUrl) {
+    try {
+      var html = UrlFetchApp.fetch(bizUrl, {
+        muteHttpExceptions: true,
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; OpenPlate/1.0)' },
+        followRedirects: true,
+      }).getContentText();
+      var dishes = parseYelpDishesFromHtml_(html);
+      if (dishes.length) return dishes;
+    } catch (e) {
+      // fall through
+    }
+  }
+  return [];
+}
+
+function parseYelpDishesFromHtml_(html) {
+  var dishes = [];
+  var patterns = [
+    /"popularDishes":\s*\[([^\]]{10,2000})\]/,
+    /"popularItems":\s*\[([^\]]{10,2000})\]/,
+    /"recommendedDishes":\s*\[([^\]]{10,2000})\]/,
+  ];
+  for (var i = 0; i < patterns.length; i++) {
+    var block = html.match(patterns[i]);
+    if (block) {
+      var nameRe = /"(?:name|title|displayName)":"([^"]+)"/g;
+      var m;
+      while ((m = nameRe.exec(block[1])) !== null && dishes.length < 3) {
+        var n = m[1].replace(/\\u0026/g, '&');
+        if (n.length > 2 && n.length < 60 && dishes.indexOf(n) === -1) dishes.push(n);
+      }
+      if (dishes.length) return dishes.slice(0, 3);
+    }
+  }
+  var altRe = /"menuItemName":"([^"]+)"/g;
+  var m2;
+  while ((m2 = altRe.exec(html)) !== null && dishes.length < 3) {
+    if (dishes.indexOf(m2[1]) === -1) dishes.push(m2[1]);
+  }
+  return dishes.slice(0, 3);
 }
 
 function fetchTripAdvisor_(name, city) {

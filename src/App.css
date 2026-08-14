@@ -256,6 +256,13 @@ main {
   color: var(--accent-2);
 }
 
+.chip.primary {
+  background: rgba(232, 197, 71, 0.18);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
 .chip:disabled {
   opacity: 0.35;
   cursor: not-allowed;
@@ -346,6 +353,41 @@ main {
   background: var(--bg-panel);
   backdrop-filter: blur(8px);
   animation: rise 500ms ease both;
+}
+
+.result-card--favorite {
+  border-color: rgba(232, 197, 71, 0.45);
+  background: rgba(232, 197, 71, 0.06);
+}
+
+.favorite-badge {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  vertical-align: middle;
+  background: rgba(232, 197, 71, 0.2);
+  color: var(--accent);
+}
+
+.popular-dishes {
+  margin: 0.35rem 0 0.6rem;
+  font-size: 0.88rem;
+  color: var(--text);
+}
+
+.popular-dishes-label {
+  display: block;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  font-weight: 700;
+  margin-bottom: 0.15rem;
 }
 
 .result-rank {
