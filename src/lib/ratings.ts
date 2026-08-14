@@ -1,7 +1,10 @@
 import { googleMapsUrl, tripadvisorUrl, yelpUrl } from './links'
+import { consumeGoogleQuota, getGoogleQuota, googleQuotaMessage } from './googleQuota'
 import { readCache, writeCache } from './storage'
 import { loadSettings } from './settings'
 import type { Restaurant } from './types'
+
+export { getGoogleQuota, googleQuotaMessage } from './googleQuota'
 
 export type SourceRating = {
   source: 'google' | 'yelp' | 'tripadvisor'
@@ -184,15 +187,25 @@ export async function fetchPlaceRatings(
       const hit = readCache<SourceRating>(ck)
       if (hit) return hit
       if (!settings.googlePlacesApiKey) {
-        return { ...base.google, error: 'Add Google Places key in Settings for live Google ratings' }
+        return { ...base.google, error: 'Google Places key not configured' }
+      }
+      if (!getGoogleQuota().canRequest) {
+        return { ...base.google, error: googleQuotaMessage() }
+      }
+      if (!consumeGoogleQuota()) {
+        return { ...base.google, error: googleQuotaMessage() }
       }
       try {
         const data = await fetchGooglePlacesRating(place, cityLabel, settings.googlePlacesApiKey, signal)
         const result: SourceRating = { ...base.google, ...data }
         writeCache(ck, result, CACHE_TTL)
         return result
-      } catch {
-        return { ...base.google, error: 'Google rating unavailable' }
+      } catch (e) {
+        // Quota was consumed; do not retry automatically to avoid burning calls
+        const msg = (e as Error).message.includes('403')
+          ? 'Google API key rejected — check referrer restrictions'
+          : 'Google rating unavailable'
+        return { ...base.google, error: msg }
       }
     })(),
     (async () => {

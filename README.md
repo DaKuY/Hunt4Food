@@ -14,10 +14,17 @@ Find good restaurants in any city. Pick a place on the map, choose up to three c
 
 No accounts required for basic use. Data from OpenStreetMap via Photon + Overpass.
 
+### Google ratings setup (one-time)
+
+1. **Enable Places API (New)** on your Google Cloud project
+2. Restrict the key to HTTP referrer `https://dakuy.github.io/*`
+3. Add repo secret **`VITE_GOOGLE_PLACES_API_KEY`** (Settings → Secrets → Actions) — never commit the key to git
+4. The app caps Google rating lookups at **40/day** and **400/month** automatically
+
 ### Ratings note
 
-- **Google**: add a free [Places API key](https://console.cloud.google.com/google/maps-apis/) in **Settings** (or `VITE_GOOGLE_PLACES_API_KEY` at build time)
-- **Yelp & TripAdvisor**: fetched automatically via public lookups (best-effort; may show — when blocked)
+- **Google**: Places Text Search via build-time secret or Settings override; hard daily/monthly caps
+- **Yelp & TripAdvisor**: best-effort public lookup (cached 7 days)
 
 ## One-time GitHub Pages setup
 
