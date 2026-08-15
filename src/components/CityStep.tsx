@@ -162,7 +162,7 @@ export function CityStep({ onConfirm, initial }: Props) {
   }
 
   function selectRecent(c: RecentCity) {
-    selectHit(c)
+    confirmCitySelection(recentToCity(c))
   }
 
   function requestMyLocation() {
@@ -193,6 +193,19 @@ export function CityStep({ onConfirm, initial }: Props) {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
+  function confirmCitySelection(city: CitySelection) {
+    setRecent(
+      pushRecentCity({
+        label: city.label,
+        lat: city.center.lat,
+        lon: city.center.lon,
+        ...city.bounds,
+      }),
+    )
+    scrollToTop()
+    onConfirm(city)
+  }
+
   async function confirmMapArea() {
     if (!draft) {
       // Use current default map bounds approx
@@ -211,21 +224,10 @@ export function CityStep({ onConfirm, initial }: Props) {
         bounds: { south: lat - delta, west: lon - delta, north: lat + delta, east: lon + delta },
         source: 'map',
       }
-      setRecent(pushRecentCity({ label: city.label, lat, lon, ...city.bounds }))
-      scrollToTop()
-      onConfirm(city)
+      confirmCitySelection(city)
       return
     }
-    setRecent(
-      pushRecentCity({
-        label: draft.label,
-        lat: draft.center.lat,
-        lon: draft.center.lon,
-        ...draft.bounds,
-      }),
-    )
-    scrollToTop()
-    onConfirm(draft)
+    confirmCitySelection(draft)
   }
 
   const rectBounds = useMemo(() => {
