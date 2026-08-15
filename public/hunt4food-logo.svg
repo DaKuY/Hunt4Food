@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 96" fill="none" role="img" aria-label="Hunt 4 Food">
+  <defs>
+    <style>
+      .hunt { fill: #1f4d2b; font-family: 'DM Sans', system-ui, sans-serif; font-weight: 800; font-size: 52px; letter-spacing: -0.02em; }
+      .food { fill: #5a9a4a; font-family: 'DM Sans', system-ui, sans-serif; font-weight: 700; font-size: 52px; letter-spacing: -0.01em; }
+    </style>
+  </defs>
+
+  <!-- Bow (curves left of H) -->
+  <path
+    d="M8 58 C8 34, 24 18, 46 18 C58 18, 66 24, 70 34"
+    stroke="#1f4d2b"
+    stroke-width="3.2"
+    stroke-linecap="round"
+    fill="none"
+  />
+  <!-- Bow grip -->
+  <path d="M8 58 V68" stroke="#1f4d2b" stroke-width="3" stroke-linecap="round" />
+
+  <!-- Arrow shaft through Hunt -->
+  <path
+    d="M18 52 H118"
+    stroke="#1f4d2b"
+    stroke-width="2.4"
+    stroke-linecap="round"
+  />
+  <!-- Arrowhead -->
+  <path d="M118 52 L108 47 L108 57 Z" fill="#1f4d2b" />
+  <!-- Fletching -->
+  <path d="M22 52 L16 46 M22 52 L16 58" stroke="#1f4d2b" stroke-width="2" stroke-linecap="round" />
+
+  <!-- Hunt -->
+  <text x="34" y="68" class="hunt">Hunt</text>
+
+  <!-- 4 as fork + knife -->
+  <g transform="translate(152 14)" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Fork tines -->
+    <path d="M14 38 L12 8" stroke="#8dc63f" stroke-width="3.2" />
+    <path d="M22 38 L22 4" stroke="#8dc63f" stroke-width="3.2" />
+    <path d="M30 38 L28 8" stroke="#8dc63f" stroke-width="3.2" />
+    <!-- Fork shoulder / 4 crossbar -->
+    <path d="M8 40 H34" stroke="#8dc63f" stroke-width="3.6" />
+    <!-- Knife blade (4 diagonal) -->
+    <path d="M10 40 L30 68" stroke="#8dc63f" stroke-width="3.4" />
+    <!-- Knife handle / 4 stem -->
+    <path d="M30 40 V68" stroke="#8dc63f" stroke-width="3.6" />
+    <!-- Knife tip accent -->
+    <path d="M10 40 L4 34" stroke="#8dc63f" stroke-width="3" />
+  </g>
+
+  <!-- Food -->
+  <text x="214" y="68" class="food">Food</text>
+
+  <!-- Leaves on d -->
+  <g fill="#5a9a4a" stroke="#5a9a4a" stroke-width="1.2" stroke-linejoin="round">
+    <path d="M392 28 C398 22, 406 22, 410 28 C406 30, 400 31, 392 28 Z" />
+    <path d="M402 24 C408 16, 418 18, 416 26 C412 27, 406 26, 402 24 Z" />
+    <path d="M392 28 C392 34, 396 38, 400 36" fill="none" stroke-width="1.4" />
+    <path d="M402 24 C404 30, 410 32, 414 28" fill="none" stroke-width="1.4" />
+  </g>
+</svg>

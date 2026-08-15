@@ -1,64 +1,78 @@
 type Props = {
   className?: string
-  /** Smaller variant for footer / inline use */
   size?: 'nav' | 'sm'
-}
-
-function BowArrow() {
-  return (
-    <svg className="brand-bow-arrow" viewBox="0 0 52 22" aria-hidden>
-      <path
-        d="M4 14 C10 4, 22 2, 34 8"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-      />
-      <path
-        d="M34 8 L48 6 M48 6 L44 4 M48 6 L44 9"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <line x1="4" y1="14" x2="4" y2="18" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-    </svg>
-  )
-}
-
-function ForkFour() {
-  return (
-    <svg className="brand-fork-four" viewBox="0 0 22 30" aria-hidden>
-      {/* Fork tines */}
-      <path d="M5 11 L7 2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      <path d="M11 11 L11 1.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      <path d="M17 11 L15 2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      {/* "4" crossbar + diagonal leg */}
-      <path d="M3 13 H19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-      <path d="M3 13 L17 28" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-      {/* "4" right stem / fork handle */}
-      <path d="M17 13 V28" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  )
 }
 
 export function BrandMark({ className = '', size = 'nav' }: Props) {
   return (
-    <span className={`brand-mark brand-mark--${size} ${className}`.trim()} aria-hidden>
-      <span className="brand-hunt">
-        <BowArrow />
-        <span className="brand-hunt-text">Hunt</span>
-      </span>
-      <ForkFour />
-      <span className="brand-food">
-        <span className="brand-food-f">F</span>
-        <span className="brand-eyes" role="img" aria-label="oo">
-          👀
-        </span>
-        <span className="brand-food-d">d</span>
-      </span>
-    </span>
+    <svg
+      className={`brand-mark brand-mark--${size} ${className}`.trim()}
+      viewBox="0 0 420 96"
+      fill="none"
+      role="img"
+      aria-hidden
+    >
+      <title>Hunt 4 Food</title>
+
+      {/* Bow */}
+      <path
+        d="M8 58 C8 34, 24 18, 46 18 C58 18, 66 24, 70 34"
+        stroke="#1f4d2b"
+        strokeWidth="3.2"
+        strokeLinecap="round"
+      />
+      <path d="M8 58 V68" stroke="#1f4d2b" strokeWidth="3" strokeLinecap="round" />
+
+      {/* Arrow through Hunt */}
+      <path d="M18 52 H118" stroke="#1f4d2b" strokeWidth="2.4" strokeLinecap="round" />
+      <path d="M118 52 L108 47 L108 57 Z" fill="#1f4d2b" />
+      <path d="M22 52 L16 46 M22 52 L16 58" stroke="#1f4d2b" strokeWidth="2" strokeLinecap="round" />
+
+      <text
+        x="34"
+        y="68"
+        fill="#1f4d2b"
+        fontFamily="'DM Sans', system-ui, sans-serif"
+        fontWeight="800"
+        fontSize="52"
+        letterSpacing="-1"
+      >
+        Hunt
+      </text>
+
+      {/* 4 = fork + knife */}
+      <g transform="translate(152 14)" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M14 38 L12 8" stroke="#8dc63f" strokeWidth="3.2" />
+        <path d="M22 38 L22 4" stroke="#8dc63f" strokeWidth="3.2" />
+        <path d="M30 38 L28 8" stroke="#8dc63f" strokeWidth="3.2" />
+        <path d="M8 40 H34" stroke="#8dc63f" strokeWidth="3.6" />
+        <path d="M10 40 L30 68" stroke="#8dc63f" strokeWidth="3.4" />
+        <path d="M30 40 V68" stroke="#8dc63f" strokeWidth="3.6" />
+        <path d="M10 40 L4 34" stroke="#8dc63f" strokeWidth="3" />
+      </g>
+
+      <text
+        x="214"
+        y="68"
+        fill="#5a9a4a"
+        fontFamily="'DM Sans', system-ui, sans-serif"
+        fontWeight="700"
+        fontSize="52"
+        letterSpacing="-0.5"
+      >
+        Food
+      </text>
+
+      {/* Leaves on d */}
+      <g fill="#5a9a4a">
+        <path d="M392 28 C398 22, 406 22, 410 28 C406 30, 400 31, 392 28 Z" />
+        <path d="M402 24 C408 16, 418 18, 416 26 C412 27, 406 26, 402 24 Z" />
+      </g>
+      <g stroke="#5a9a4a" strokeWidth="1.4" fill="none" strokeLinecap="round">
+        <path d="M392 28 C392 34, 396 38, 400 36" />
+        <path d="M402 24 C404 30, 410 32, 414 28" />
+      </g>
+    </svg>
   )
 }
 
