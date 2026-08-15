@@ -86,6 +86,7 @@ function SearchFlow() {
   const [error, setError] = useState<string | null>(null)
   const [openNowOnly, setOpenNowOnly] = useState(false)
   const [hasWebsiteOnly, setHasWebsiteOnly] = useState(false)
+  const [noFastFood, setNoFastFood] = useState(false)
   const [shortlist, setShortlist] = useState<ShortlistItem[]>(() => loadShortlist())
   const [shareMessage, setShareMessage] = useState<string | null>(null)
   const searchAbortRef = useRef<AbortController | null>(null)
@@ -94,7 +95,9 @@ function SearchFlow() {
   const autoRanRef = useRef(false)
   const seedOilBoostRef = useRef(false)
   const tasteRef = useRef(taste)
+  const noFastFoodRef = useRef(noFastFood)
   tasteRef.current = taste
+  noFastFoodRef.current = noFastFood
 
   const places = displayPlaces
 
@@ -162,6 +165,7 @@ function SearchFlow() {
           keyword: searchKeyword,
           taste: tasteRef.current,
           limit: 10,
+          excludeFastFood: noFastFoodRef.current,
         })
         setDisplayPlaces(ranked)
         setSeenIds(new Set(ranked.map((p) => p.id)))
@@ -192,6 +196,7 @@ function SearchFlow() {
 
   const searchAgain = useCallback(async () => {
     if (!city || cuisines.length === 0) return
+    window.scrollTo({ top: 0, behavior: 'smooth' })
     searchAbortRef.current?.abort()
     const ctrl = new AbortController()
     searchAbortRef.current = ctrl
@@ -225,6 +230,7 @@ function SearchFlow() {
               taste,
               limit: slots + 15,
               excludeIds: nextSeen,
+              excludeFastFood: noFastFood,
             }).slice(0, slots)
           : []
 
@@ -238,7 +244,7 @@ function SearchFlow() {
     } finally {
       if (!ctrl.signal.aborted) setLoading(false)
     }
-  }, [city, cuisines, dietary, keyword, taste, displayPlaces, favoriteIds, seenIds, rawPlaces])
+  }, [city, cuisines, dietary, keyword, taste, displayPlaces, favoriteIds, seenIds, rawPlaces, noFastFood])
 
   useEffect(() => {
     if (!city || prefetchPromiseRef.current) return
@@ -341,6 +347,7 @@ function SearchFlow() {
           error={error}
           openNowOnly={openNowOnly}
           hasWebsiteOnly={hasWebsiteOnly}
+          noFastFood={noFastFood}
           ratingsMap={ratingsMap}
           ratingsLoading={ratingsLoading}
           seedOilMap={seedOilMap}
@@ -360,6 +367,7 @@ function SearchFlow() {
           onSearchAgain={() => void searchAgain()}
           onToggleOpenNow={() => setOpenNowOnly((v) => !v)}
           onToggleWebsite={() => setHasWebsiteOnly((v) => !v)}
+          onToggleNoFastFood={() => setNoFastFood((v) => !v)}
           lovedIds={lovedIds}
           shortlistedIds={shortlistedIds}
           shareMessage={shareMessage}
