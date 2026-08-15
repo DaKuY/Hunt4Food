@@ -3,8 +3,8 @@ type Props = {
   size?: 'nav' | 'sm'
 }
 
-const LOGO_VERSION = '3'
-const logoSrc = `${import.meta.env.BASE_URL}hunt4food-logo.svg?v=${LOGO_VERSION}`
+const LOGO_VERSION = '4'
+const logoSrc = `${import.meta.env.BASE_URL}hunt4food_green_adventure_logo.png?v=${LOGO_VERSION}`
 
 export function BrandMark({ className = '', size = 'nav' }: Props) {
   return (
