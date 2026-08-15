@@ -5,14 +5,17 @@ import { usePlaceDishes } from './hooks/usePlaceDishes'
 import { usePlaceRatings } from './hooks/usePlaceRatings'
 import { usePlaceSeedOil } from './hooks/usePlaceSeedOil'
 import { buildSearchShareUrl } from './lib/links'
+import { coordsToCitySelection } from './lib/geocode'
 import { ensureCacheGeneration, pruneExpiredCache } from './lib/storage'
 import { fetchRestaurants } from './lib/overpass'
 import { rankRestaurants } from './lib/rank'
 import { seedOilGradeScore } from './lib/seedOil'
 import {
+  loadRecentCities,
   loadShortlist,
   loadTaste,
   lovePlace,
+  recentToCitySelection,
   saveShortlist,
   skipPlace,
   toggleShortlist,
@@ -60,6 +63,8 @@ function SearchFlow() {
   const [params, setParams] = useSearchParams()
   const { taste, setTaste } = useTaste()
   const restored = cityFromParams(params)
+  const initialRecentRef = useRef(restored ? null : loadRecentCities()[0])
+  const initialRecent = initialRecentRef.current
   const initialCuisines = useMemo(() => {
     const c = params.get('cuisines')
     if (!c) return [] as CuisineId[]
@@ -71,10 +76,15 @@ function SearchFlow() {
 
   const [step, setStep] = useState<'city' | 'cuisine' | 'results'>(() => {
     if (restored && (initialCuisines.length > 0 || (params.get('keyword')?.trim().length ?? 0) > 0)) return 'results'
-    if (restored) return 'cuisine'
+    if (restored || initialRecent) return 'cuisine'
     return 'city'
   })
-  const [city, setCity] = useState<CitySelection | null>(() => restored)
+  const [city, setCity] = useState<CitySelection | null>(
+    () => restored ?? (initialRecent ? recentToCitySelection(initialRecent) : null),
+  )
+  const [resolvingLocation, setResolvingLocation] = useState(
+    () => !restored && !initialRecent && typeof navigator !== 'undefined' && 'geolocation' in navigator,
+  )
   const [cuisines, setCuisines] = useState<CuisineId[]>(() => initialCuisines)
   const [dietary] = useState<DietaryId[]>(() => {
     const d = params.get('dietary')
@@ -270,6 +280,7 @@ function SearchFlow() {
     window.scrollTo({ top: 0, behavior: 'smooth' })
     setCity(selection)
     setStep('cuisine')
+    setResolvingLocation(false)
     poolRef.current = []
     setRawPlaces([])
     prefetchPromiseRef.current = fetchRestaurants(selection.bounds).then((raw) => {
@@ -289,6 +300,47 @@ function SearchFlow() {
       return next
     })
   }
+
+  useEffect(() => {
+    if (!initialRecent || restored) return
+    setParams((prev) => {
+      if (prev.get('city')) return prev
+      const next = new URLSearchParams(prev)
+      next.set('city', initialRecent.label)
+      next.set('lat', String(initialRecent.lat))
+      next.set('lon', String(initialRecent.lon))
+      next.set('south', String(initialRecent.south))
+      next.set('west', String(initialRecent.west))
+      next.set('north', String(initialRecent.north))
+      next.set('east', String(initialRecent.east))
+      return next
+    })
+  }, [initialRecent, restored, setParams])
+
+  useEffect(() => {
+    if (restored || initialRecent || !resolvingLocation) return
+
+    let cancelled = false
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        if (cancelled) return
+        try {
+          const selection = await coordsToCitySelection(pos.coords.latitude, pos.coords.longitude)
+          if (!cancelled) confirmCity(selection)
+        } finally {
+          if (!cancelled) setResolvingLocation(false)
+        }
+      },
+      () => {
+        if (!cancelled) setResolvingLocation(false)
+      },
+      { enableHighAccuracy: false, timeout: 12000, maximumAge: 600000 },
+    )
+
+    return () => {
+      cancelled = true
+    }
+  }, [restored, initialRecent, resolvingLocation])
 
   function startFind() {
     if (!city || !hasSearchCriteria(cuisines, keyword)) return
@@ -325,9 +377,15 @@ function SearchFlow() {
   return (
     <>
       {step === 'city' && (
-        <Suspense fallback={<p className="muted">Loading map…</p>}>
-          <CityStep onConfirm={confirmCity} initial={city} />
-        </Suspense>
+        resolvingLocation ? (
+          <section className="step">
+            <p className="muted">Finding your location…</p>
+          </section>
+        ) : (
+          <Suspense fallback={<p className="muted">Loading map…</p>}>
+            <CityStep onConfirm={confirmCity} initial={city} />
+          </Suspense>
+        )
       )}
       {step === 'cuisine' && city && (
         <CuisineStep
