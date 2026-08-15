@@ -60,18 +60,21 @@
 
 .brand-mark {
   display: block;
-  height: 2.65rem;
+  height: 2.75rem;
   width: auto;
-  max-width: min(220px, 58vw);
+  aspect-ratio: 480 / 110;
+  max-width: min(280px, 72vw);
+  min-width: 120px;
   object-fit: contain;
   transition: transform 180ms ease;
 }
 
 .brand-mark--sm {
-  height: 1.2rem;
-  max-width: 120px;
+  height: 1.35rem;
+  min-width: 72px;
+  max-width: 150px;
   display: inline-block;
-  vertical-align: -0.25rem;
+  vertical-align: -0.28rem;
 }
 
 .site-footer .brand-mark {
