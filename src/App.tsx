@@ -52,6 +52,10 @@ function useTaste() {
   return { taste, setTaste }
 }
 
+function hasSearchCriteria(cuisines: CuisineId[], keyword: string): boolean {
+  return cuisines.length > 0 || keyword.trim().length > 0
+}
+
 function SearchFlow() {
   const [params, setParams] = useSearchParams()
   const { taste, setTaste } = useTaste()
@@ -66,7 +70,7 @@ function SearchFlow() {
   }, [params])
 
   const [step, setStep] = useState<'city' | 'cuisine' | 'results'>(() => {
-    if (restored && initialCuisines.length) return 'results'
+    if (restored && (initialCuisines.length > 0 || (params.get('keyword')?.trim().length ?? 0) > 0)) return 'results'
     if (restored) return 'cuisine'
     return 'city'
   })
@@ -195,7 +199,7 @@ function SearchFlow() {
   )
 
   const searchAgain = useCallback(async () => {
-    if (!city || cuisines.length === 0) return
+    if (!city || !hasSearchCriteria(cuisines, keyword)) return
     window.scrollTo({ top: 0, behavior: 'smooth' })
     searchAbortRef.current?.abort()
     const ctrl = new AbortController()
@@ -257,10 +261,10 @@ function SearchFlow() {
 
   // Auto-run when shared URL has city + cuisines
   useEffect(() => {
-    if (autoRanRef.current || !restored || initialCuisines.length === 0) return
+    if (autoRanRef.current || !restored || !hasSearchCriteria(initialCuisines, params.get('keyword') ?? '')) return
     autoRanRef.current = true
     void runSearch(restored, initialCuisines, dietary, keyword)
-  }, [restored, initialCuisines, dietary, keyword, runSearch])
+  }, [restored, initialCuisines, dietary, keyword, runSearch, params])
 
   function confirmCity(selection: CitySelection) {
     window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -287,7 +291,7 @@ function SearchFlow() {
   }
 
   function startFind() {
-    if (!city || cuisines.length === 0) return
+    if (!city || !hasSearchCriteria(cuisines, keyword)) return
     window.scrollTo({ top: 0, behavior: 'smooth' })
     setParams((prev) => {
       const next = new URLSearchParams(prev)
