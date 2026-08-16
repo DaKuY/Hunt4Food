@@ -92,14 +92,27 @@
   gap: 1rem;
 }
 
-.topbar nav a {
+.topbar nav a,
+.topbar-link {
   color: var(--muted);
   text-decoration: none;
   font-weight: 500;
+  font: inherit;
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
 }
 
-.topbar nav a:hover {
+.topbar nav a:hover,
+.topbar-link:hover {
   color: var(--text);
+}
+
+.topbar-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 2px;
 }
 
 main {
