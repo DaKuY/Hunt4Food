@@ -1,4 +1,14 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  createContext,
+  lazy,
+  Suspense,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { HashRouter, Link, Navigate, Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { cuisineById, isKnownCuisineId, isKnownDietaryId } from './data/cuisines'
 import { usePlaceDishes } from './hooks/usePlaceDishes'
@@ -30,6 +40,22 @@ const CityStep = lazy(() =>
   import('./components/CityStep').then((m) => ({ default: m.CityStep })),
 )
 
+type SearchNavState = {
+  onNewCity: () => void
+  showNewCity: boolean
+}
+
+const SearchNavContext = createContext<{
+  searchNav: SearchNavState | null
+  setSearchNav: (state: SearchNavState | null) => void
+} | null>(null)
+
+function useSearchNav() {
+  const ctx = useContext(SearchNavContext)
+  if (!ctx) throw new Error('useSearchNav must be used within SearchNavContext')
+  return ctx
+}
+
 function cityFromParams(params: URLSearchParams): CitySelection | null {
   const label = params.get('city')
   const lat = Number(params.get('lat'))
@@ -53,6 +79,7 @@ function useTaste() {
 }
 
 function SearchFlow() {
+  const { setSearchNav } = useSearchNav()
   const [params, setParams] = useSearchParams()
   const { taste, setTaste } = useTaste()
   const restored = cityFromParams(params)
@@ -295,6 +322,37 @@ function SearchFlow() {
     void runSearch(city, cuisines, dietary, keyword)
   }
 
+  const startNewCitySearch = useCallback(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+    searchAbortRef.current?.abort()
+    setStep('city')
+    setCity(null)
+    setCuisines([])
+    setKeyword('')
+    setRawPlaces([])
+    setDisplayPlaces([])
+    setFavoriteIds(new Set())
+    setSeenIds(new Set())
+    setLoading(false)
+    setError(null)
+    setOpenNowOnly(false)
+    setHasWebsiteOnly(false)
+    setShareMessage(null)
+    poolRef.current = []
+    prefetchPromiseRef.current = null
+    autoRanRef.current = false
+    seedOilBoostRef.current = false
+    setParams(new URLSearchParams())
+  }, [setParams])
+
+  useEffect(() => {
+    setSearchNav({
+      onNewCity: startNewCitySearch,
+      showNewCity: step !== 'city',
+    })
+    return () => setSearchNav(null)
+  }, [step, startNewCitySearch, setSearchNav])
+
   async function copySearchLink() {
     try {
       await navigator.clipboard.writeText(buildSearchShareUrl(params))
@@ -410,16 +468,7 @@ function SearchFlow() {
             )
           }}
           onBack={() => setStep('cuisine')}
-          onNewSearch={() => {
-            setStep('city')
-            setRawPlaces([])
-            setDisplayPlaces([])
-            setFavoriteIds(new Set())
-            setSeenIds(new Set())
-            poolRef.current = []
-            prefetchPromiseRef.current = null
-            autoRanRef.current = false
-          }}
+          onNewSearch={startNewCitySearch}
         />
       )}
     </>
@@ -493,6 +542,7 @@ function SearchRoute() {
 
 function Shell() {
   const navigate = useNavigate()
+  const [searchNav, setSearchNav] = useState<SearchNavState | null>(null)
 
   useEffect(() => {
     ensureCacheGeneration()
@@ -504,6 +554,7 @@ function Shell() {
   }
 
   return (
+    <SearchNavContext.Provider value={{ searchNav, setSearchNav }}>
     <div className="app-shell">
       <div className="atmosphere" aria-hidden />
       <header className="topbar">
@@ -511,6 +562,11 @@ function Shell() {
           <BrandMark />
         </button>
         <nav>
+          {searchNav?.showNewCity && (
+            <button type="button" className="topbar-link" onClick={searchNav.onNewCity}>
+              New city
+            </button>
+          )}
           <Link to="/taste">My Taste</Link>
           <Link to="/settings">Settings</Link>
         </nav>
@@ -539,6 +595,7 @@ function Shell() {
         </p>
       </footer>
     </div>
+    </SearchNavContext.Provider>
   )
 }
 
