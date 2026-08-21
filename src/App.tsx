@@ -93,7 +93,8 @@ function SearchFlow() {
   }, [params])
 
   const [step, setStep] = useState<'city' | 'cuisine' | 'results'>(() => {
-    if (restored && initialCuisines.length) return 'results'
+    const restoredKeyword = (params.get('keyword') ?? '').trim()
+    if (restored && (initialCuisines.length || restoredKeyword)) return 'results'
     if (restored) return 'cuisine'
     return 'city'
   })
@@ -218,7 +219,8 @@ function SearchFlow() {
   )
 
   const searchAgain = useCallback(async () => {
-    if (!city || cuisines.length === 0) return
+    if (!city || (cuisines.length === 0 && !keyword.trim())) return
+    window.scrollTo({ top: 0, behavior: 'smooth' })
     searchAbortRef.current?.abort()
     const ctrl = new AbortController()
     searchAbortRef.current = ctrl
@@ -259,6 +261,7 @@ function SearchFlow() {
       setDisplayPlaces([...favorites, ...fresh])
       setSeenIds(nextSeen)
       setFavoriteIds(new Set(favorites.map((p) => p.id)))
+      window.scrollTo({ top: 0, behavior: 'smooth' })
     } catch (e) {
       if ((e as Error).name === 'AbortError' || ctrl.signal.aborted) return
       setError('Could not fetch more places. Try again in a minute.')
@@ -276,9 +279,10 @@ function SearchFlow() {
     })
   }, [city])
 
-  // Auto-run when shared URL has city + cuisines
+  // Auto-run when shared URL has city + cuisines or keyword
   useEffect(() => {
-    if (autoRanRef.current || !restored || initialCuisines.length === 0) return
+    if (autoRanRef.current || !restored) return
+    if (initialCuisines.length === 0 && !keyword.trim()) return
     autoRanRef.current = true
     void runSearch(restored, initialCuisines, dietary, keyword)
   }, [restored, initialCuisines, dietary, keyword, runSearch])
@@ -308,11 +312,13 @@ function SearchFlow() {
   }
 
   function startFind() {
-    if (!city || cuisines.length === 0) return
+    if (!city) return
+    if (cuisines.length === 0 && !keyword.trim()) return
     window.scrollTo({ top: 0, behavior: 'smooth' })
     setParams((prev) => {
       const next = new URLSearchParams(prev)
-      next.set('cuisines', cuisines.join(','))
+      if (cuisines.length) next.set('cuisines', cuisines.join(','))
+      else next.delete('cuisines')
       next.set('dietary', dietary.join(','))
       const trimmed = keyword.trim()
       if (trimmed) next.set('keyword', trimmed)

@@ -35,8 +35,8 @@ export function CuisineStep({
         <p className="eyebrow">Hunt4Food · Step 2 · {cityLabel}</p>
         <h2>What are you craving?</h2>
         <p className="lede">
-          Pick up to three food types — healthy picks that still taste great, or whatever you&apos;re in the
-          mood for.
+          Pick up to three food types, type a keyword, or both. You can search with just a keyword if you
+          don&apos;t know what cuisine you want.
         </p>
       </header>
 
@@ -62,26 +62,35 @@ export function CuisineStep({
           </div>
         </div>
       ))}
-      <p className="muted">{selected.length}/3 selected</p>
+      <p className="muted">{selected.length}/3 selected — or skip and search by keyword only</p>
 
       <label className="field keyword-field">
-        <span>Keyword search (optional)</span>
+        <span>Keyword search</span>
         <input
           value={keyword}
           onChange={(e) => onKeywordChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (selected.length > 0 || keyword.trim())) onNext()
+          }}
           placeholder='e.g. "wild caught fish", "grass fed steak", "organic salad"'
           autoComplete="off"
         />
       </label>
       <p className="muted small">
-        Boosts places whose name or listing mentions your phrase. Soft signal, not a hard filter.
+        Optional if you picked a food type — or search with just a keyword. Boosts places whose name or
+        listing mentions your phrase.
       </p>
 
       <div className="step-actions row">
         <button type="button" className="btn ghost" onClick={onBack}>
           Back
         </button>
-        <button type="button" className="btn primary" disabled={selected.length === 0} onClick={onNext}>
+        <button
+          type="button"
+          className="btn primary"
+          disabled={selected.length === 0 && !keyword.trim()}
+          onClick={onNext}
+        >
           Find 10 places
         </button>
       </div>
