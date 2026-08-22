@@ -1,4 +1,14 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  createContext,
+  lazy,
+  Suspense,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { HashRouter, Link, Navigate, Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { cuisineById, isKnownCuisineId, isKnownDietaryId } from './data/cuisines'
 import { usePlaceDishes } from './hooks/usePlaceDishes'
@@ -18,7 +28,7 @@ import {
   toggleShortlist,
   type ShortlistItem,
 } from './lib/taste'
-import type { CitySelection, CuisineId, DietaryId, RankedRestaurant, Restaurant, TasteProfile } from './lib/types'
+import type { CitySelection, CuisineId, DietaryId, MapBounds, RankedRestaurant, Restaurant, TasteProfile } from './lib/types'
 import { CuisineStep } from './components/CuisineStep'
 import { ResultsStep } from './components/ResultsStep'
 import { SettingsPage } from './components/SettingsPage'
@@ -29,6 +39,22 @@ import './App.css'
 const CityStep = lazy(() =>
   import('./components/CityStep').then((m) => ({ default: m.CityStep })),
 )
+
+type SearchNavState = {
+  onNewCity: () => void
+  showNewCity: boolean
+}
+
+const SearchNavContext = createContext<{
+  searchNav: SearchNavState | null
+  setSearchNav: (state: SearchNavState | null) => void
+} | null>(null)
+
+function useSearchNav() {
+  const ctx = useContext(SearchNavContext)
+  if (!ctx) throw new Error('useSearchNav must be used within SearchNavContext')
+  return ctx
+}
 
 function cityFromParams(params: URLSearchParams): CitySelection | null {
   const label = params.get('city')
@@ -53,6 +79,7 @@ function useTaste() {
 }
 
 function SearchFlow() {
+  const { setSearchNav } = useSearchNav()
   const [params, setParams] = useSearchParams()
   const { taste, setTaste } = useTaste()
   const restored = cityFromParams(params)
@@ -66,7 +93,8 @@ function SearchFlow() {
   }, [params])
 
   const [step, setStep] = useState<'city' | 'cuisine' | 'results'>(() => {
-    if (restored && initialCuisines.length) return 'results'
+    const restoredKeyword = (params.get('keyword') ?? '').trim()
+    if (restored && (initialCuisines.length || restoredKeyword)) return 'results'
     if (restored) return 'cuisine'
     return 'city'
   })
@@ -95,6 +123,36 @@ function SearchFlow() {
   const seedOilBoostRef = useRef(false)
   const tasteRef = useRef(taste)
   tasteRef.current = taste
+
+  const schedulePrefetch = useCallback((bounds: MapBounds) => {
+    prefetchPromiseRef.current = null
+    const promise = fetchRestaurants(bounds)
+      .then((raw) => {
+        poolRef.current = raw
+        setRawPlaces(raw)
+        return raw
+      })
+      .catch((err) => {
+        prefetchPromiseRef.current = null
+        throw err
+      })
+    prefetchPromiseRef.current = promise
+  }, [])
+
+  const loadRestaurantPool = useCallback(async (bounds: MapBounds, signal?: AbortSignal): Promise<Restaurant[]> => {
+    if (poolRef.current.length) return poolRef.current
+
+    const prefetch = prefetchPromiseRef.current
+    if (prefetch) {
+      try {
+        return await prefetch
+      } catch {
+        prefetchPromiseRef.current = null
+      }
+    }
+
+    return fetchRestaurants(bounds, signal)
+  }, [])
 
   const places = displayPlaces
 
@@ -176,7 +234,7 @@ function SearchFlow() {
       setLoading(true)
       setDisplayPlaces([])
       try {
-        const raw = await (prefetchPromiseRef.current ?? fetchRestaurants(selection.bounds, ctrl.signal))
+        const raw = await loadRestaurantPool(selection.bounds, ctrl.signal)
         if (ctrl.signal.aborted) return
         rankPool(raw)
       } catch (e) {
@@ -187,11 +245,12 @@ function SearchFlow() {
         setLoading(false)
       }
     },
-    [],
+    [loadRestaurantPool],
   )
 
   const searchAgain = useCallback(async () => {
-    if (!city || cuisines.length === 0) return
+    if (!city || (cuisines.length === 0 && !keyword.trim())) return
+    window.scrollTo({ top: 0, behavior: 'smooth' })
     searchAbortRef.current?.abort()
     const ctrl = new AbortController()
     searchAbortRef.current = ctrl
@@ -208,7 +267,7 @@ function SearchFlow() {
     try {
       let pool = poolRef.current.length ? poolRef.current : rawPlaces
       if (pool.length === 0) {
-        pool = await (prefetchPromiseRef.current ?? fetchRestaurants(city.bounds, ctrl.signal))
+        pool = await loadRestaurantPool(city.bounds, ctrl.signal)
         if (ctrl.signal.aborted) return
         poolRef.current = pool
         setRawPlaces(pool)
@@ -232,26 +291,24 @@ function SearchFlow() {
       setDisplayPlaces([...favorites, ...fresh])
       setSeenIds(nextSeen)
       setFavoriteIds(new Set(favorites.map((p) => p.id)))
+      window.scrollTo({ top: 0, behavior: 'smooth' })
     } catch (e) {
       if ((e as Error).name === 'AbortError' || ctrl.signal.aborted) return
       setError('Could not fetch more places. Try again in a minute.')
     } finally {
       if (!ctrl.signal.aborted) setLoading(false)
     }
-  }, [city, cuisines, dietary, keyword, taste, displayPlaces, favoriteIds, seenIds, rawPlaces])
+  }, [city, cuisines, dietary, keyword, taste, displayPlaces, favoriteIds, seenIds, rawPlaces, loadRestaurantPool])
 
   useEffect(() => {
-    if (!city || prefetchPromiseRef.current) return
-    prefetchPromiseRef.current = fetchRestaurants(city.bounds).then((raw) => {
-      poolRef.current = raw
-      setRawPlaces(raw)
-      return raw
-    })
-  }, [city])
+    if (!city) return
+    schedulePrefetch(city.bounds)
+  }, [city, schedulePrefetch])
 
-  // Auto-run when shared URL has city + cuisines
+  // Auto-run when shared URL has city + cuisines or keyword
   useEffect(() => {
-    if (autoRanRef.current || !restored || initialCuisines.length === 0) return
+    if (autoRanRef.current || !restored) return
+    if (initialCuisines.length === 0 && !keyword.trim()) return
     autoRanRef.current = true
     void runSearch(restored, initialCuisines, dietary, keyword)
   }, [restored, initialCuisines, dietary, keyword, runSearch])
@@ -262,11 +319,6 @@ function SearchFlow() {
     setStep('cuisine')
     poolRef.current = []
     setRawPlaces([])
-    prefetchPromiseRef.current = fetchRestaurants(selection.bounds).then((raw) => {
-      poolRef.current = raw
-      setRawPlaces(raw)
-      return raw
-    })
     setParams((prev) => {
       const next = new URLSearchParams(prev)
       next.set('city', selection.label)
@@ -281,11 +333,13 @@ function SearchFlow() {
   }
 
   function startFind() {
-    if (!city || cuisines.length === 0) return
+    if (!city) return
+    if (cuisines.length === 0 && !keyword.trim()) return
     window.scrollTo({ top: 0, behavior: 'smooth' })
     setParams((prev) => {
       const next = new URLSearchParams(prev)
-      next.set('cuisines', cuisines.join(','))
+      if (cuisines.length) next.set('cuisines', cuisines.join(','))
+      else next.delete('cuisines')
       next.set('dietary', dietary.join(','))
       const trimmed = keyword.trim()
       if (trimmed) next.set('keyword', trimmed)
@@ -294,6 +348,37 @@ function SearchFlow() {
     })
     void runSearch(city, cuisines, dietary, keyword)
   }
+
+  const startNewCitySearch = useCallback(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+    searchAbortRef.current?.abort()
+    setStep('city')
+    setCity(null)
+    setCuisines([])
+    setKeyword('')
+    setRawPlaces([])
+    setDisplayPlaces([])
+    setFavoriteIds(new Set())
+    setSeenIds(new Set())
+    setLoading(false)
+    setError(null)
+    setOpenNowOnly(false)
+    setHasWebsiteOnly(false)
+    setShareMessage(null)
+    poolRef.current = []
+    prefetchPromiseRef.current = null
+    autoRanRef.current = false
+    seedOilBoostRef.current = false
+    setParams(new URLSearchParams())
+  }, [setParams])
+
+  useEffect(() => {
+    setSearchNav({
+      onNewCity: startNewCitySearch,
+      showNewCity: step !== 'city',
+    })
+    return () => setSearchNav(null)
+  }, [step, startNewCitySearch, setSearchNav])
 
   async function copySearchLink() {
     try {
@@ -410,16 +495,7 @@ function SearchFlow() {
             )
           }}
           onBack={() => setStep('cuisine')}
-          onNewSearch={() => {
-            setStep('city')
-            setRawPlaces([])
-            setDisplayPlaces([])
-            setFavoriteIds(new Set())
-            setSeenIds(new Set())
-            poolRef.current = []
-            prefetchPromiseRef.current = null
-            autoRanRef.current = false
-          }}
+          onNewSearch={startNewCitySearch}
         />
       )}
     </>
@@ -493,6 +569,7 @@ function SearchRoute() {
 
 function Shell() {
   const navigate = useNavigate()
+  const [searchNav, setSearchNav] = useState<SearchNavState | null>(null)
 
   useEffect(() => {
     ensureCacheGeneration()
@@ -504,6 +581,7 @@ function Shell() {
   }
 
   return (
+    <SearchNavContext.Provider value={{ searchNav, setSearchNav }}>
     <div className="app-shell">
       <div className="atmosphere" aria-hidden />
       <header className="topbar">
@@ -511,6 +589,11 @@ function Shell() {
           <BrandMark />
         </button>
         <nav>
+          {searchNav?.showNewCity && (
+            <button type="button" className="topbar-link" onClick={searchNav.onNewCity}>
+              New city
+            </button>
+          )}
           <Link to="/taste">My Taste</Link>
           <Link to="/settings">Settings</Link>
         </nav>
@@ -539,6 +622,7 @@ function Shell() {
         </p>
       </footer>
     </div>
+    </SearchNavContext.Provider>
   )
 }
 

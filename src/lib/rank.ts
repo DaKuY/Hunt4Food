@@ -160,7 +160,9 @@ export function rankRestaurants(
     let score = 0
 
     const matched = opts.selectedCuisines.filter((c) => matchesCuisine(place, c))
-    if (matched.length) {
+    if (opts.selectedCuisines.length === 0) {
+      // Keyword-only (or unfiltered) search — skip cuisine penalty
+    } else if (matched.length) {
       score += 30 + matched.length * 8
       reasons.push(
         `Fits your pick${matched.length > 1 ? 's' : ''}: ${matched
@@ -178,6 +180,7 @@ export function rankRestaurants(
     if (opts.keyword?.trim()) {
       const kw = keywordBoost(place, opts.keyword)
       score += kw.points
+      if (opts.selectedCuisines.length === 0 && kw.points > 0) score += 18
       reasons.push(...kw.reasons)
     }
 
