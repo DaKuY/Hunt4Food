@@ -20,12 +20,22 @@ type OverpassElement = {
   tags?: Record<string, string>
 }
 
-function buildAreaQuery(bounds: MapBounds): string {
+function buildAreaQuery(bounds: MapBounds, includeJuiceShops = false): string {
   const { south, west, north, east } = bounds
   const bbox = `${south},${west},${north},${east}`
-  return `
+  if (!includeJuiceShops) {
+    return `
 [out:json][timeout:8];
 nwr["amenity"~"^(restaurant|cafe|fast_food|ice_cream|food_court)$"](${bbox});
+out center tags ${RESULT_CAP};
+`.trim()
+  }
+  return `
+[out:json][timeout:8];
+(
+  nwr["amenity"~"^(restaurant|cafe|fast_food|ice_cream|food_court)$"](${bbox});
+  nwr["shop"~"^(juice|health_food)$"](${bbox});
+);
 out center tags ${RESULT_CAP};
 `.trim()
 }
@@ -63,7 +73,7 @@ function elementToRestaurant(el: OverpassElement): Restaurant | null {
     vegan: tags.vegan || tags.diet_vegan,
     glutenFree: tags.gluten_free || tags['diet:gluten_free'],
     halal: tags.halal || tags.diet_halal,
-    amenity: tags.amenity,
+    amenity: tags.amenity || tags.shop,
   }
 }
 
@@ -83,11 +93,11 @@ function dedupe(places: Restaurant[]): Restaurant[] {
   return Array.from(seen.values())
 }
 
-function cacheKey(bounds: MapBounds): string {
+function cacheKey(bounds: MapBounds, includeJuiceShops = false): string {
   const b = [bounds.south, bounds.west, bounds.north, bounds.east]
     .map((n) => n.toFixed(3))
     .join(',')
-  return `overpass:v4:area:${b}`
+  return `overpass:v5:area:${includeJuiceShops ? 'healthy:' : ''}${b}`
 }
 
 async function fetchMirror(mirror: string, query: string, signal?: AbortSignal): Promise<Restaurant[]> {
@@ -117,12 +127,17 @@ async function fetchMirror(mirror: string, query: string, signal?: AbortSignal):
 }
 
 /** All mapped restaurants/cafes in the visible area. Cuisine ranking happens client-side. */
-export async function fetchRestaurants(bounds: MapBounds, signal?: AbortSignal): Promise<Restaurant[]> {
-  const key = cacheKey(bounds)
+export async function fetchRestaurants(
+  bounds: MapBounds,
+  signal?: AbortSignal,
+  opts?: { includeJuiceShops?: boolean },
+): Promise<Restaurant[]> {
+  const includeJuiceShops = Boolean(opts?.includeJuiceShops)
+  const key = cacheKey(bounds, includeJuiceShops)
   const cached = readCache<Restaurant[]>(key)
   if (cached?.length) return cached
 
-  const query = buildAreaQuery(bounds)
+  const query = buildAreaQuery(bounds, includeJuiceShops)
   const places = await Promise.any(MIRRORS.map((mirror) => fetchMirror(mirror, query, signal)))
   writeCache(key, places, CACHE_TTL_MS)
   return places

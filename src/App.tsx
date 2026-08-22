@@ -10,12 +10,13 @@ import {
   useState,
 } from 'react'
 import { HashRouter, Link, Navigate, Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
-import { cuisineById, isKnownCuisineId, isKnownDietaryId } from './data/cuisines'
+import { cuisineById, isKnownCuisineId, isKnownDietaryId, normalizeCuisineSelection } from './data/cuisines'
 import { usePlaceDishes } from './hooks/usePlaceDishes'
 import { usePlaceRatings } from './hooks/usePlaceRatings'
 import { usePlaceSeedOil } from './hooks/usePlaceSeedOil'
 import { buildSearchShareUrl } from './lib/links'
 import { ensureCacheGeneration, pruneExpiredCache } from './lib/storage'
+import { attachSeedOilSignals, pickHealthyLanes, runHealthyHunt } from './lib/healthySearch'
 import { fetchRestaurants } from './lib/overpass'
 import { rankRestaurants } from './lib/rank'
 import { seedOilGradeScore } from './lib/seedOil'
@@ -86,10 +87,9 @@ function SearchFlow() {
   const initialCuisines = useMemo(() => {
     const c = params.get('cuisines')
     if (!c) return [] as CuisineId[]
-    return c
-      .split(',')
-      .filter((id) => isKnownCuisineId(id))
-      .slice(0, 3) as CuisineId[]
+    return normalizeCuisineSelection(
+      c.split(',').filter((id) => isKnownCuisineId(id)) as CuisineId[],
+    )
   }, [params])
 
   const [step, setStep] = useState<'city' | 'cuisine' | 'results'>(() => {
@@ -116,9 +116,11 @@ function SearchFlow() {
   const [hasWebsiteOnly, setHasWebsiteOnly] = useState(false)
   const [shortlist, setShortlist] = useState<ShortlistItem[]>(() => loadShortlist())
   const [shareMessage, setShareMessage] = useState<string | null>(null)
+  const [healthyStatus, setHealthyStatus] = useState<string | null>(null)
   const searchAbortRef = useRef<AbortController | null>(null)
   const prefetchPromiseRef = useRef<Promise<Restaurant[]> | null>(null)
   const poolRef = useRef<Restaurant[]>([])
+  const healthyPoolRef = useRef<RankedRestaurant[]>([])
   const autoRanRef = useRef(false)
   const seedOilBoostRef = useRef(false)
   const tasteRef = useRef(taste)
@@ -126,10 +128,16 @@ function SearchFlow() {
 
   const places = displayPlaces
 
-  const { ratingsMap, ratingsLoading } = usePlaceRatings(places, city?.label ?? '', step === 'results' && places.length > 0)
+  const healthyMode = cuisines.includes('healthy')
+  const { ratingsMap, ratingsLoading } = usePlaceRatings(
+    places,
+    city?.label ?? '',
+    step === 'results' && places.length > 0,
+    { skipGoogle: healthyMode },
+  )
   const { seedOilMap, seedOilLoading } = usePlaceSeedOil(
     places,
-    step === 'results' && places.length > 0 && dietary.includes('no_seed_oils'),
+    step === 'results' && places.length > 0 && (dietary.includes('no_seed_oils') || healthyMode),
   )
   const { dishesMap, dishesLoading } = usePlaceDishes(
     places,
@@ -145,14 +153,14 @@ function SearchFlow() {
   }, [])
 
   useEffect(() => {
-    if (!dietary.includes('no_seed_oils') || seedOilLoading || displayPlaces.length === 0) return
+    if ((!dietary.includes('no_seed_oils') && !healthyMode) || seedOilLoading || displayPlaces.length === 0) return
     if (seedOilBoostRef.current) return
     const hasGrade = displayPlaces.some((p) => seedOilMap[p.id]?.grade)
     if (!hasGrade) return
 
     seedOilBoostRef.current = true
     setDisplayPlaces((prev) => {
-      const updated = prev.map((p) => {
+      const scored = prev.map((p) => {
         const info = seedOilMap[p.id]
         if (!info?.grade) return p
         const boost = seedOilGradeScore(info.grade)
@@ -165,9 +173,9 @@ function SearchFlow() {
         if (!reasons.some((r) => r.includes('Seed Oil Tracker'))) reasons.unshift(msg)
         return { ...p, score: p.score + boost, reasons: reasons.slice(0, 4) }
       })
-      return [...updated].sort((a, b) => b.score - a.score)
+      return attachSeedOilSignals(scored, seedOilMap)
     })
-  }, [dietary, seedOilMap, seedOilLoading, displayPlaces.length])
+  }, [dietary, healthyMode, seedOilMap, seedOilLoading, displayPlaces.length])
 
   const runSearch = useCallback(
     async (selection: CitySelection, food: CuisineId[], dietaryPrefs: DietaryId[], searchKeyword: string) => {
@@ -179,6 +187,53 @@ function SearchFlow() {
       seedOilBoostRef.current = false
       setFavoriteIds(new Set())
       setSeenIds(new Set())
+      setHealthyStatus(null)
+      healthyPoolRef.current = []
+
+      if (food.includes('healthy')) {
+        setLoading(true)
+        setDisplayPlaces([])
+        setHealthyStatus('Searching this neighborhood, then checking reviews for grass-fed and avocado oil…')
+        try {
+          const juicePromise = fetchRestaurants(selection.bounds, ctrl.signal, { includeJuiceShops: true }).then(
+            (raw) => {
+              poolRef.current = raw
+              setRawPlaces(raw)
+              return raw
+            },
+          )
+          const osm = poolRef.current.length ? poolRef.current : await juicePromise
+          if (ctrl.signal.aborted) return
+          const result = await runHealthyHunt({
+            city: selection,
+            selectedCuisines: food,
+            dietary: dietaryPrefs,
+            keyword: searchKeyword,
+            taste: tasteRef.current,
+            osmPlaces: osm,
+            signal: ctrl.signal,
+            onProgress: (update) => {
+              if (ctrl.signal.aborted) return
+              setHealthyStatus(update.status)
+              if (update.places?.length) {
+                setDisplayPlaces(update.places)
+                setSeenIds(new Set(update.places.map((p) => p.id)))
+                setLoading(false)
+              }
+            },
+          })
+          if (ctrl.signal.aborted) return
+          healthyPoolRef.current = result.pool
+          setDisplayPlaces(result.displayed)
+          setSeenIds(new Set(result.displayed.map((p) => p.id)))
+          setLoading(false)
+        } catch (e) {
+          if ((e as Error).name === 'AbortError' || ctrl.signal.aborted) return
+          setError('Could not finish the healthy search. Try again, or use Google / Yelp below.')
+          setLoading(false)
+        }
+        return
+      }
 
       const rankPool = (raw: Restaurant[]) => {
         poolRef.current = raw
@@ -246,15 +301,17 @@ function SearchFlow() {
       const slots = Math.max(0, 10 - favorites.length)
       const fresh =
         slots > 0
-          ? rankRestaurants(pool, {
-              center: city.center,
-              selectedCuisines: cuisines,
-              dietary,
-              keyword,
-              taste,
-              limit: slots + 15,
-              excludeIds: nextSeen,
-            }).slice(0, slots)
+          ? cuisines.includes('healthy') && healthyPoolRef.current.length
+            ? pickHealthyLanes(healthyPoolRef.current, slots, nextSeen)
+            : rankRestaurants(pool, {
+                center: city.center,
+                selectedCuisines: cuisines,
+                dietary,
+                keyword,
+                taste,
+                limit: slots + 15,
+                excludeIds: nextSeen,
+              }).slice(0, slots)
           : []
 
       fresh.forEach((p) => nextSeen.add(p.id))
@@ -344,7 +401,9 @@ function SearchFlow() {
     setOpenNowOnly(false)
     setHasWebsiteOnly(false)
     setShareMessage(null)
+    setHealthyStatus(null)
     poolRef.current = []
+    healthyPoolRef.current = []
     prefetchPromiseRef.current = null
     autoRanRef.current = false
     seedOilBoostRef.current = false
@@ -403,13 +462,15 @@ function SearchFlow() {
           keyword={keyword.trim() || undefined}
           loading={loading}
           error={error}
+          healthyMode={healthyMode}
+          searchStatus={healthyStatus}
+          showSeedOil={dietary.includes('no_seed_oils') || healthyMode}
           openNowOnly={openNowOnly}
           hasWebsiteOnly={hasWebsiteOnly}
           ratingsMap={ratingsMap}
           ratingsLoading={ratingsLoading}
           seedOilMap={seedOilMap}
           seedOilLoading={seedOilLoading}
-          showSeedOil={dietary.includes('no_seed_oils')}
           dishesMap={dishesMap}
           dishesLoading={dishesLoading}
           favoriteIds={favoriteIds}

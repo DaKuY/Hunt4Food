@@ -67,12 +67,44 @@ export type Restaurant = {
   halal?: string
   amenity?: string
   cuisineRaw?: string
+  yelpId?: string
+}
+
+export type HealthyLane = 'clean_cooking' | 'smoothie' | 'protein'
+
+export type HealthySignalId =
+  | 'grass_fed'
+  | 'pasture_raised'
+  | 'no_seed_oils'
+  | 'avocado_oil'
+  | 'butter'
+  | 'salmon'
+  | 'chicken_breast'
+  | 'smoothie'
+
+export type HealthySignalSource =
+  | 'yelp_review'
+  | 'google_snippet'
+  | 'opentable'
+  | 'seed_oil'
+  | 'listing'
+
+export type HealthySignal = {
+  id: HealthySignalId
+  label: string
+  source: HealthySignalSource
+  quote?: string
 }
 
 export type RankedRestaurant = Restaurant & {
   score: number
   reasons: string[]
   distanceKm: number
+  lane?: HealthyLane
+  signals?: HealthySignal[]
+  evidenceQuote?: string
+  yelpId?: string
+  sourceKind?: 'osm' | 'yelp' | 'google'
 }
 
 export type TastePlace = {

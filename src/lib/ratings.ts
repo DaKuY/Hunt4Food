@@ -376,6 +376,16 @@ export async function fetchPlaceRatings(
   return withPrice({ google, yelp, tripadvisor, price: emptyRatings(place, cityLabel).price })
 }
 
+export function seedSourceRating(
+  place: Restaurant,
+  cityLabel: string,
+  source: 'google' | 'yelp' | 'tripadvisor',
+  value: Partial<SourceRating>,
+): void {
+  const base = emptyRatings(place, cityLabel)[source]
+  writeSourceCache(place, cityLabel, source, { ...base, ...value })
+}
+
 export function formatRating(r: SourceRating): string {
   if (r.rating == null) return '—'
   const stars = r.rating.toFixed(1)

@@ -31,4 +31,10 @@ GitHub Pages is static — the browser cannot scrape Yelp or TripAdvisor directl
 
 In Settings, click **Test proxy**. You should see sample Yelp/TripAdvisor/Google ratings within a few seconds.
 
-TripAdvisor ratings use DuckDuckGo search snippets (TripAdvisor blocks direct scraping). The app tries your Apps Script proxy first, then a browser fallback. **Redeploy** `Code.gs` after updates (Deploy → Manage deployments → Edit → New version).
+TripAdvisor ratings use DuckDuckGo search snippets (TripAdvisor blocks direct scraping). The app tries your Apps Script proxy first, then a browser fallback.
+
+## Healthy search sources
+
+The same web app also serves `source=healthyDiscover` and `source=healthyReviews` (Yelp Fusion search + review excerpts, DuckDuckGo OpenTable and Google snippets, optional server-side Google Places). Existing `yelp` / `google` / `tripadvisor` responses are unchanged.
+
+**After updating `Code.gs`, redeploy** (**Deploy → Manage deployments → Edit → New version**) so Healthy review search can use the new endpoints. The `/exec` URL stays the same. Until you redeploy, Healthy still ranks OpenStreetMap + known chains + Seed Oil Tracker, without live review mining.
