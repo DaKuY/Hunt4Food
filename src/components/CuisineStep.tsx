@@ -24,7 +24,8 @@ export function CuisineStep({
 }: Props) {
   const healthyOn = selected.includes('healthy')
   const foodSelected: CuisineId[] = selected.filter((id) => id !== 'healthy')
-  const canNext = selected.length > 0 || Boolean(keyword.trim())
+  const trimmedKeyword = keyword.trim()
+  const canProceed = selected.length > 0 || trimmedKeyword.length > 0
 
   function toggleHealthy() {
     if (healthyOn) {
@@ -111,21 +112,23 @@ export function CuisineStep({
           value={keyword}
           onChange={(e) => onKeywordChange(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && canNext) onNext()
+            if (e.key === 'Enter' && canProceed) onNext()
           }}
           placeholder='e.g. "wild caught fish", "grass fed steak", "organic salad"'
           autoComplete="off"
         />
       </label>
       <p className="muted small">
-        Optional if you picked Healthy or a food type — or search with just this phrase.
+        {selected.length > 0
+          ? 'Optional if you picked Healthy or a food type — places whose name or listing mentions your phrase.'
+          : 'Search by keyword alone, or combine with Healthy or food types above for tighter picks.'}
       </p>
 
       <div className="step-actions row">
         <button type="button" className="btn ghost" onClick={onBack}>
           Back
         </button>
-        <button type="button" className="btn primary" disabled={!canNext} onClick={onNext}>
+        <button type="button" className="btn primary" disabled={!canProceed} onClick={onNext}>
           Find 10 places
         </button>
       </div>

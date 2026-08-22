@@ -3,11 +3,10 @@ import type { MapBounds, Restaurant } from './types'
 
 /** Public Overpass mirrors — order is a hint; we race and fall back across all of them. */
 const MIRRORS = [
-  'https://overpass.openstreetmap.fr/api/interpreter',
-  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
-  'https://overpass.kumi.systems/api/interpreter',
   'https://overpass-api.de/api/interpreter',
-  'https://overpass.osm.jp/api/interpreter',
+  'https://overpass.openstreetmap.fr/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
 ]
 
 const CACHE_TTL_MS = 1000 * 60 * 60 * 12 // 12 hours
