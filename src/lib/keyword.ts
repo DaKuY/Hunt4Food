@@ -1,5 +1,15 @@
 import type { Restaurant } from './types'
 
+export const KEYWORD_SUGGESTIONS = [
+  'wild caught fish',
+  'grass fed steak',
+  'organic fruit',
+  'pasture raised',
+  'wild salmon',
+  'raw honey',
+  'sourdough bread',
+] as const
+
 export function normalizeKeyword(raw: string): string {
   return raw
     .trim()

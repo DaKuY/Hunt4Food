@@ -1,4 +1,5 @@
 import { CUISINES, CUISINE_GROUPS } from '../data/cuisines'
+import { KEYWORD_SUGGESTIONS } from '../lib/keyword'
 import type { CuisineId } from '../lib/types'
 
 type Props = {
@@ -73,12 +74,24 @@ export function CuisineStep({
           value={keyword}
           onChange={(e) => onKeywordChange(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && (selected.length > 0 || keyword.trim())) onNext()
+            if (e.key === 'Enter' && canProceed) onNext()
           }}
           placeholder='e.g. "wild caught fish", "grass fed steak", "organic salad"'
           autoComplete="off"
         />
       </label>
+      <div className="chip-row wrap">
+        {KEYWORD_SUGGESTIONS.map((suggestion) => (
+          <button
+            key={suggestion}
+            type="button"
+            className={`chip ghost ${keyword.toLowerCase() === suggestion ? 'on' : ''}`}
+            onClick={() => onKeywordChange(keyword.toLowerCase() === suggestion ? '' : suggestion)}
+          >
+            {suggestion}
+          </button>
+        ))}
+      </div>
       <p className="muted small">
         {selected.length > 0
           ? 'Optional boost — places whose name or listing mentions your phrase.'

@@ -98,7 +98,7 @@ export function ResultsStep({
   })
 
   const favoriteCount = places.filter((p) => favoriteIds.has(p.id)).length
-  const fallback = cityCuisineFallbackLinks(cityLabel, cuisineLabels)
+  const fallback = cityCuisineFallbackLinks(cityLabel, cuisineLabels, keyword)
   const [mapReady, setMapReady] = useState(false)
 
   useEffect(() => {
