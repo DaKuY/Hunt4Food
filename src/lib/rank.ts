@@ -164,34 +164,44 @@ export function rankRestaurants(
   const exclude = opts.excludeIds ? new Set(opts.excludeIds) : null
   let pool = exclude ? places.filter((p) => !exclude.has(p.id)) : places
   if (opts.excludeFastFood) pool = pool.filter((p) => !isFastFood(p))
+
+  const keywordOnly = opts.selectedCuisines.length === 0 && Boolean(opts.keyword?.trim())
+  if (keywordOnly) {
+    pool = pool.filter((p) => keywordBoost(p, opts.keyword!).points > 0)
+  }
+
   const ranked: RankedRestaurant[] = pool.map((place) => {
     const reasons: string[] = []
     let score = 0
 
-    const matched = opts.selectedCuisines.filter((c) => matchesCuisine(place, c))
-    if (opts.selectedCuisines.length === 0) {
-      // Keyword-only (or unfiltered) search — skip cuisine penalty
-    } else if (matched.length) {
-      score += 30 + matched.length * 8
-      reasons.push(
-        `Fits your pick${matched.length > 1 ? 's' : ''}: ${matched
-          .map((id) => cuisineById(id).label)
-          .join(', ')}`,
-      )
+    if (keywordOnly) {
+      const kw = keywordBoost(place, opts.keyword!)
+      score += kw.points
+      if (kw.points > 0) score += 18
+      reasons.push(...kw.reasons)
     } else {
-      score -= 5
+      const matched = opts.selectedCuisines.filter((c) => matchesCuisine(place, c))
+      if (matched.length) {
+        score += 30 + matched.length * 8
+        reasons.push(
+          `Fits your pick${matched.length > 1 ? 's' : ''}: ${matched
+            .map((id) => cuisineById(id).label)
+            .join(', ')}`,
+        )
+      } else {
+        score -= 5
+      }
+
+      if (opts.keyword?.trim()) {
+        const kw = keywordBoost(place, opts.keyword)
+        score += kw.points
+        reasons.push(...kw.reasons)
+      }
     }
 
     const diet = dietaryBoost(place, opts.dietary)
     score += diet.points
     reasons.push(...diet.reasons)
-
-    if (opts.keyword?.trim()) {
-      const kw = keywordBoost(place, opts.keyword)
-      score += kw.points
-      if (opts.selectedCuisines.length === 0 && kw.points > 0) score += 18
-      reasons.push(...kw.reasons)
-    }
 
     if (opts.dietary.includes('no_seed_oils') && opts.seedOilByPlaceId) {
       const info = opts.seedOilByPlaceId[place.id]

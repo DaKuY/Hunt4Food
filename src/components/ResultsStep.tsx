@@ -116,13 +116,21 @@ export function ResultsStep({
         <p className="eyebrow">Hunt4Food · {cityLabel}</p>
         <h2>Ten places worth the hunt</h2>
         <p className="lede">
-          Ranked for your area and taste
-          {keyword ? (
+          {keyword && cuisineLabels.length === 0 ? (
             <>
-              {' '}
-              with a boost for <strong>{keyword}</strong>
+              Ranked for places matching <strong>{keyword}</strong> in your area
             </>
-          ) : null}
+          ) : (
+            <>
+              Ranked for your area and taste
+              {keyword ? (
+                <>
+                  {' '}
+                  with a boost for <strong>{keyword}</strong>
+                </>
+              ) : null}
+            </>
+          )}
           {' '}
           — good food you&apos;d actually want, not endless scrolling. Star <strong>Favorite</strong> places
           you want to keep, then <strong>Find more restaurants</strong> to swap out the rest for fresh options.
@@ -191,8 +199,9 @@ export function ResultsStep({
       {!loading && !error && filtered.length === 0 && (
         <div className="empty-state">
           <p>
-            Map data looks thin here for those cuisines. Zoom to a denser neighborhood, try different
-            food types, or jump to Google / Yelp / TripAdvisor for this city.
+            {keyword && cuisineLabels.length === 0
+              ? `No mapped places in this area mention “${keyword}”. Try a broader phrase, zoom to a denser neighborhood, or pick a food type.`
+              : 'Map data looks thin here for those cuisines. Zoom to a denser neighborhood, try different food types, or jump to Google / Yelp / TripAdvisor for this city.'}
           </p>
           <div className="chip-row wrap">
             <a className="btn primary" href={fallback.google} target="_blank" rel="noreferrer">

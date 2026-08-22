@@ -15,14 +15,17 @@ import { usePlaceDishes } from './hooks/usePlaceDishes'
 import { usePlaceRatings } from './hooks/usePlaceRatings'
 import { usePlaceSeedOil } from './hooks/usePlaceSeedOil'
 import { buildSearchShareUrl } from './lib/links'
+import { coordsToCitySelection } from './lib/geocode'
 import { ensureCacheGeneration, pruneExpiredCache } from './lib/storage'
 import { fetchRestaurants } from './lib/overpass'
 import { rankRestaurants } from './lib/rank'
 import { seedOilGradeScore } from './lib/seedOil'
 import {
+  loadRecentCities,
   loadShortlist,
   loadTaste,
   lovePlace,
+  recentToCitySelection,
   saveShortlist,
   skipPlace,
   toggleShortlist,
@@ -78,11 +81,17 @@ function useTaste() {
   return { taste, setTaste }
 }
 
+function hasSearchCriteria(cuisines: CuisineId[], keyword: string): boolean {
+  return cuisines.length > 0 || keyword.trim().length > 0
+}
+
 function SearchFlow() {
   const { setSearchNav } = useSearchNav()
   const [params, setParams] = useSearchParams()
   const { taste, setTaste } = useTaste()
   const restored = cityFromParams(params)
+  const initialRecentRef = useRef(restored ? null : loadRecentCities()[0])
+  const initialRecent = initialRecentRef.current
   const initialCuisines = useMemo(() => {
     const c = params.get('cuisines')
     if (!c) return [] as CuisineId[]
@@ -94,11 +103,16 @@ function SearchFlow() {
 
   const [step, setStep] = useState<'city' | 'cuisine' | 'results'>(() => {
     const restoredKeyword = (params.get('keyword') ?? '').trim()
-    if (restored && (initialCuisines.length || restoredKeyword)) return 'results'
-    if (restored) return 'cuisine'
+    if (restored && (initialCuisines.length > 0 || restoredKeyword)) return 'results'
+    if (restored || initialRecent) return 'cuisine'
     return 'city'
   })
-  const [city, setCity] = useState<CitySelection | null>(() => restored)
+  const [city, setCity] = useState<CitySelection | null>(
+    () => restored ?? (initialRecent ? recentToCitySelection(initialRecent) : null),
+  )
+  const [resolvingLocation, setResolvingLocation] = useState(
+    () => !restored && !initialRecent && typeof navigator !== 'undefined' && 'geolocation' in navigator,
+  )
   const [cuisines, setCuisines] = useState<CuisineId[]>(() => initialCuisines)
   const [dietary] = useState<DietaryId[]>(() => {
     const d = params.get('dietary')
@@ -253,7 +267,7 @@ function SearchFlow() {
   )
 
   const searchAgain = useCallback(async () => {
-    if (!city || (cuisines.length === 0 && !keyword.trim())) return
+    if (!city || !hasSearchCriteria(cuisines, keyword)) return
     window.scrollTo({ top: 0, behavior: 'smooth' })
     searchAbortRef.current?.abort()
     const ctrl = new AbortController()
@@ -312,18 +326,19 @@ function SearchFlow() {
 
   // Auto-run when shared URL has city + cuisines or keyword
   useEffect(() => {
-    if (autoRanRef.current || !restored) return
-    if (initialCuisines.length === 0 && !keyword.trim()) return
+    if (autoRanRef.current || !restored || !hasSearchCriteria(initialCuisines, params.get('keyword') ?? '')) return
     autoRanRef.current = true
     void runSearch(restored, initialCuisines, dietary, keyword)
-  }, [restored, initialCuisines, dietary, keyword, runSearch])
+  }, [restored, initialCuisines, dietary, keyword, runSearch, params])
 
   function confirmCity(selection: CitySelection) {
     window.scrollTo({ top: 0, behavior: 'smooth' })
     setCity(selection)
     setStep('cuisine')
+    setResolvingLocation(false)
     poolRef.current = []
     setRawPlaces([])
+    schedulePrefetch(selection.bounds)
     setParams((prev) => {
       const next = new URLSearchParams(prev)
       next.set('city', selection.label)
@@ -337,9 +352,49 @@ function SearchFlow() {
     })
   }
 
+  useEffect(() => {
+    if (!initialRecent || restored) return
+    setParams((prev) => {
+      if (prev.get('city')) return prev
+      const next = new URLSearchParams(prev)
+      next.set('city', initialRecent.label)
+      next.set('lat', String(initialRecent.lat))
+      next.set('lon', String(initialRecent.lon))
+      next.set('south', String(initialRecent.south))
+      next.set('west', String(initialRecent.west))
+      next.set('north', String(initialRecent.north))
+      next.set('east', String(initialRecent.east))
+      return next
+    })
+  }, [initialRecent, restored, setParams])
+
+  useEffect(() => {
+    if (restored || initialRecent || !resolvingLocation) return
+
+    let cancelled = false
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        if (cancelled) return
+        try {
+          const selection = await coordsToCitySelection(pos.coords.latitude, pos.coords.longitude)
+          if (!cancelled) confirmCity(selection)
+        } finally {
+          if (!cancelled) setResolvingLocation(false)
+        }
+      },
+      () => {
+        if (!cancelled) setResolvingLocation(false)
+      },
+      { enableHighAccuracy: false, timeout: 12000, maximumAge: 600000 },
+    )
+
+    return () => {
+      cancelled = true
+    }
+  }, [restored, initialRecent, resolvingLocation])
+
   function startFind() {
-    if (!city) return
-    if (cuisines.length === 0 && !keyword.trim()) return
+    if (!city || !hasSearchCriteria(cuisines, keyword)) return
     window.scrollTo({ top: 0, behavior: 'smooth' })
     setParams((prev) => {
       const next = new URLSearchParams(prev)
@@ -405,9 +460,15 @@ function SearchFlow() {
   return (
     <>
       {step === 'city' && (
-        <Suspense fallback={<p className="muted">Loading map…</p>}>
-          <CityStep onConfirm={confirmCity} initial={city} />
-        </Suspense>
+        resolvingLocation ? (
+          <section className="step">
+            <p className="muted">Finding your location…</p>
+          </section>
+        ) : (
+          <Suspense fallback={<p className="muted">Loading map…</p>}>
+            <CityStep onConfirm={confirmCity} initial={city} />
+          </Suspense>
+        )
       )}
       {step === 'cuisine' && city && (
         <CuisineStep

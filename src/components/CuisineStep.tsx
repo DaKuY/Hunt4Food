@@ -29,6 +29,9 @@ export function CuisineStep({
     onChange([...selected, id])
   }
 
+  const trimmedKeyword = keyword.trim()
+  const canProceed = selected.length > 0 || trimmedKeyword.length > 0
+
   return (
     <section className="step cuisine-step">
       <header className="step-header">
@@ -77,8 +80,9 @@ export function CuisineStep({
         />
       </label>
       <p className="muted small">
-        Optional if you picked a food type — or search with just a keyword. Boosts places whose name or
-        listing mentions your phrase.
+        {selected.length > 0
+          ? 'Optional boost — places whose name or listing mentions your phrase.'
+          : 'Search by keyword alone, or combine with food types above for tighter picks.'}
       </p>
 
       <div className="step-actions row">
@@ -88,7 +92,7 @@ export function CuisineStep({
         <button
           type="button"
           className="btn primary"
-          disabled={selected.length === 0 && !keyword.trim()}
+          disabled={!canProceed}
           onClick={onNext}
         >
           Find 10 places
