@@ -20,7 +20,12 @@ function seedFromCache(places: RankedRestaurant[], cityLabel: string): Record<st
   return initial
 }
 
-export function usePlaceRatings(places: RankedRestaurant[], cityLabel: string, enabled: boolean) {
+export function usePlaceRatings(
+  places: RankedRestaurant[],
+  cityLabel: string,
+  enabled: boolean,
+  opts?: { skipGoogle?: boolean },
+) {
   const [map, setMap] = useState<Record<string, PlaceRatings>>(() =>
     enabled ? seedFromCache(places, cityLabel) : {},
   )
@@ -37,24 +42,26 @@ export function usePlaceRatings(places: RankedRestaurant[], cityLabel: string, e
     setLoading(true)
 
     void (async () => {
-      await mapPool(
-        list,
-        8,
-        async (place) => {
-          if (ctrl.signal.aborted) return
-          try {
-            const google = await fetchGoogleRating(place, cityLabel, ctrl.signal)
+      if (!opts?.skipGoogle) {
+        await mapPool(
+          list,
+          8,
+          async (place) => {
             if (ctrl.signal.aborted) return
-            setMap((prev) => {
-              const base = prev[place.id] ?? emptyPlaceRatings(place, cityLabel)
-              return { ...prev, [place.id]: withPlacePrice({ ...base, google }) }
-            })
-          } catch {
-            // skip
-          }
-        },
-        ctrl.signal,
-      )
+            try {
+              const google = await fetchGoogleRating(place, cityLabel, ctrl.signal)
+              if (ctrl.signal.aborted) return
+              setMap((prev) => {
+                const base = prev[place.id] ?? emptyPlaceRatings(place, cityLabel)
+                return { ...prev, [place.id]: withPlacePrice({ ...base, google }) }
+              })
+            } catch {
+              // skip
+            }
+          },
+          ctrl.signal,
+        )
+      }
 
       if (ctrl.signal.aborted) return
 
@@ -105,7 +112,7 @@ export function usePlaceRatings(places: RankedRestaurant[], cityLabel: string, e
       ctrl.abort()
       setLoading(false)
     }
-  }, [placeIds, cityLabel, enabled])
+  }, [placeIds, cityLabel, enabled, opts?.skipGoogle])
 
   return { ratingsMap: map, ratingsLoading: loading }
 }

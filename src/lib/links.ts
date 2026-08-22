@@ -11,6 +11,11 @@ export function yelpUrl(place: Restaurant, cityLabel: string): string {
   return `https://www.yelp.com/search?find_desc=${findDesc}&find_loc=${findLoc}`
 }
 
+export function openTableUrl(place: Restaurant, cityLabel: string): string {
+  const q = encodeURIComponent(`${place.name} ${cityLabel}`.trim())
+  return `https://www.opentable.com/s?term=${q}`
+}
+
 export function tripadvisorUrl(place: Restaurant, cityLabel: string): string {
   const q = encodeURIComponent(`${place.name} ${cityLabel} restaurant`)
   return `https://www.tripadvisor.com/Search?q=${q}`

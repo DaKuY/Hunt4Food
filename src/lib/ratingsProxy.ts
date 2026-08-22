@@ -7,7 +7,11 @@ export const BUILTIN_RATINGS_PROXY_URL =
 /**
  * JSONP fetch for Google Apps Script web apps (CORS-safe from GitHub Pages).
  */
-export function jsonpGet<T>(baseUrl: string, params: Record<string, string>): Promise<T> {
+export function jsonpGet<T>(
+  baseUrl: string,
+  params: Record<string, string>,
+  timeoutMs = 10000,
+): Promise<T> {
   const url = new URL(baseUrl)
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v))
 
@@ -17,7 +21,7 @@ export function jsonpGet<T>(baseUrl: string, params: Record<string, string>): Pr
     const timer = window.setTimeout(() => {
       cleanup()
       reject(new Error('Proxy timeout'))
-    }, 10000)
+    }, timeoutMs)
 
     function cleanup() {
       window.clearTimeout(timer)

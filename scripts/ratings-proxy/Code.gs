@@ -9,6 +9,9 @@
  *    - Execute as: Me
  *    - Who has access: Anyone
  * 4. Copy the /exec URL into GitHub environment secret VITE_RATINGS_PROXY_URL
+ *
+ * Healthy search: source=healthyDiscover | healthyReviews
+ * After editing, redeploy (Manage deployments → Edit → New version).
  */
 
 function doGet(e) {
@@ -30,8 +33,12 @@ function doGet(e) {
       result = fetchTripAdvisor_(name, city);
     } else if (source === 'google') {
       result = fetchGoogle_(name, city, lat, lon, googleKey);
+    } else if (source === 'healthyDiscover') {
+      result = fetchHealthyDiscover_(city, lat, lon, p.radius);
+    } else if (source === 'healthyReviews') {
+      result = fetchHealthyReviews_(String(p.ids || ''), city, String(p.names || ''));
     } else {
-      result = { error: 'Unknown source. Use yelp, tripadvisor, or google.' };
+      result = { error: 'Unknown source. Use yelp, tripadvisor, google, healthyDiscover, or healthyReviews.' };
     }
   } catch (err) {
     result = { error: String(err), rating: null, reviewCount: null, url: null };
@@ -297,4 +304,332 @@ function parseTripAdvisorSnippet_(html, searchFallback) {
     reviewCount: countMatch ? Number(String(countMatch[1]).replace(/,/g, '')) : null,
     url: url,
   };
+}
+
+var HEALTHY_UA_ =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
+function yelpSearchRequest_(apiKey, term, categories, lat, lon, radius) {
+  var url =
+    'https://api.yelp.com/v3/businesses/search?term=' +
+    encodeURIComponent(term) +
+    '&latitude=' +
+    lat +
+    '&longitude=' +
+    lon +
+    '&radius=' +
+    radius +
+    '&limit=10&categories=' +
+    encodeURIComponent(categories);
+  return {
+    url: url,
+    method: 'get',
+    muteHttpExceptions: true,
+    headers: { Authorization: 'Bearer ' + apiKey },
+  };
+}
+
+function ddgRequest_(query) {
+  return {
+    url: 'https://html.duckduckgo.com/html/?q=' + encodeURIComponent(query),
+    method: 'get',
+    muteHttpExceptions: true,
+    headers: { 'User-Agent': HEALTHY_UA_ },
+  };
+}
+
+function googleHealthySearchRequest_(apiKey, query, lat, lon) {
+  return {
+    url: 'https://places.googleapis.com/v1/places:searchText',
+    method: 'post',
+    contentType: 'application/json',
+    headers: {
+      'X-Goog-Api-Key': apiKey,
+      'X-Goog-FieldMask':
+        'places.id,places.displayName,places.rating,places.userRatingCount,places.googleMapsUri,places.priceLevel,places.location,places.formattedAddress,places.types,places.editorialSummary',
+    },
+    payload: JSON.stringify({
+      textQuery: query,
+      maxResultCount: 10,
+      locationBias: {
+        circle: {
+          center: { latitude: lat, longitude: lon },
+          radius: 8000,
+        },
+      },
+    }),
+    muteHttpExceptions: true,
+  };
+}
+
+function mapYelpBiz_(biz, lane) {
+  var coords = biz.coordinates || {};
+  var loc = biz.location || {};
+  return {
+    id: biz.id || '',
+    name: biz.name || '',
+    lat: coords.latitude != null ? coords.latitude : null,
+    lon: coords.longitude != null ? coords.longitude : null,
+    address: (loc.display_address || []).join(', ') || loc.address1 || '',
+    rating: biz.rating || null,
+    reviewCount: biz.review_count || null,
+    price: biz.price || null,
+    url: biz.url || null,
+    categories: (biz.categories || []).map(function (c) {
+      return c.alias || c.title || '';
+    }).filter(Boolean),
+    phone: biz.display_phone || biz.phone || null,
+    lane: lane,
+    source: 'yelp',
+  };
+}
+
+function parseYelpSearch_(resp, lane) {
+  if (!resp || resp.getResponseCode() !== 200) return [];
+  try {
+    var data = JSON.parse(resp.getContentText());
+    return (data.businesses || []).map(function (biz) {
+      return mapYelpBiz_(biz, lane);
+    });
+  } catch (e) {
+    return [];
+  }
+}
+
+function parseGoogleHealthy_(resp) {
+  if (!resp || resp.getResponseCode() !== 200) return [];
+  try {
+    var data = JSON.parse(resp.getContentText());
+    return (data.places || []).map(function (hit) {
+      var loc = hit.location || {};
+      var summary = hit.editorialSummary && hit.editorialSummary.text ? hit.editorialSummary.text : '';
+      return {
+        id: hit.id || '',
+        name: hit.displayName && hit.displayName.text ? hit.displayName.text : '',
+        lat: loc.latitude != null ? loc.latitude : null,
+        lon: loc.longitude != null ? loc.longitude : null,
+        address: hit.formattedAddress || '',
+        rating: hit.rating != null ? hit.rating : null,
+        reviewCount: hit.userRatingCount != null ? hit.userRatingCount : null,
+        priceLevel: hit.priceLevel || null,
+        url: hit.googleMapsUri || null,
+        categories: hit.types || [],
+        editorialSummary: summary,
+        lane: null,
+        source: 'google',
+      };
+    });
+  } catch (e) {
+    return [];
+  }
+}
+
+function parseKeywordSnippets_(html, source) {
+  if (!html) return [];
+  var out = [];
+  var snippetRe = /class="result__snippet"[^>]*>([\s\S]*?)<\/(?:a|td|span|div)>/gi;
+  var m;
+  while ((m = snippetRe.exec(html)) !== null && out.length < 8) {
+    var text = String(m[1])
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (text.length > 20) out.push({ text: text.slice(0, 280), url: null, source: source });
+  }
+
+  var otRe = /https?:\/\/(?:www\.)?opentable\.com\/[^\s"'&<>]+/gi;
+  var ot;
+  while ((ot = otRe.exec(html)) !== null && out.length < 12) {
+    out.push({ text: '', url: ot[0].replace(/&amp;/g, '&'), source: 'opentable' });
+  }
+
+  if (out.length) return out;
+
+  var plain = html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ');
+  var keys = [
+    'grass-fed',
+    'grass fed',
+    'avocado oil',
+    'pasture',
+    'seed oil',
+    'smoothie',
+    'salmon',
+    'chicken breast',
+  ];
+  for (var i = 0; i < keys.length; i++) {
+    var idx = plain.toLowerCase().indexOf(keys[i]);
+    if (idx >= 0) {
+      var start = Math.max(0, idx - 80);
+      var end = Math.min(plain.length, idx + 140);
+      out.push({ text: plain.slice(start, end).trim(), url: null, source: source });
+    }
+  }
+  return out.slice(0, 8);
+}
+
+function dedupeHealthyPlaces_(places) {
+  var seen = {};
+  var out = [];
+  for (var i = 0; i < places.length; i++) {
+    var p = places[i];
+    if (!p || !p.name) continue;
+    var key = p.id
+      ? String(p.source || '') + ':' + p.id
+      : String(p.name)
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '');
+    if (seen[key]) continue;
+    seen[key] = true;
+    out.push(p);
+  }
+  return out;
+}
+
+function fetchHealthyDiscover_(city, lat, lon, radiusRaw) {
+  var radius = parseInt(radiusRaw, 10);
+  if (isNaN(radius) || radius < 500) radius = 8000;
+  if (radius > 40000) radius = 40000;
+
+  var props = PropertiesService.getScriptProperties();
+  var yelpKey = props.getProperty('YELP_API_KEY');
+  var googleKey = props.getProperty('GOOGLE_PLACES_API_KEY');
+  var requests = [];
+  var tags = [];
+
+  if (yelpKey && !isNaN(lat) && !isNaN(lon)) {
+    requests.push(
+      yelpSearchRequest_(yelpKey, 'grass-fed avocado oil', 'salad,newamerican,healthmarkets', lat, lon, radius),
+    );
+    tags.push('yelp_clean');
+    requests.push(yelpSearchRequest_(yelpKey, 'smoothie acai juice', 'juicebars,acaibowls', lat, lon, radius));
+    tags.push('yelp_smoothie');
+    requests.push(
+      yelpSearchRequest_(
+        yelpKey,
+        'healthy salmon grilled chicken breast',
+        'seafood,mediterranean,poke',
+        lat,
+        lon,
+        radius,
+      ),
+    );
+    tags.push('yelp_protein');
+  }
+
+  requests.push(ddgRequest_('grass-fed OR "avocado oil" restaurant ' + city + ' site:opentable.com'));
+  tags.push('ddg_opentable');
+  requests.push(ddgRequest_(city + ' restaurant "grass-fed" OR "pasture-raised" OR "avocado oil" review'));
+  tags.push('ddg_reviews');
+
+  if (googleKey && !isNaN(lat) && !isNaN(lon)) {
+    requests.push(
+      googleHealthySearchRequest_(
+        googleKey,
+        'healthy restaurants grass-fed avocado oil smoothie salmon ' + city,
+        lat,
+        lon,
+      ),
+    );
+    tags.push('google');
+  }
+
+  if (!requests.length) {
+    return { places: [], snippets: [], error: 'No discovery sources configured' };
+  }
+
+  var responses = UrlFetchApp.fetchAll(requests);
+  var places = [];
+  var snippets = [];
+
+  for (var i = 0; i < responses.length; i++) {
+    var tag = tags[i];
+    var resp = responses[i];
+    if (tag === 'yelp_clean') places = places.concat(parseYelpSearch_(resp, 'clean_cooking'));
+    else if (tag === 'yelp_smoothie') places = places.concat(parseYelpSearch_(resp, 'smoothie'));
+    else if (tag === 'yelp_protein') places = places.concat(parseYelpSearch_(resp, 'protein'));
+    else if (tag === 'google') places = places.concat(parseGoogleHealthy_(resp));
+    else if (tag === 'ddg_opentable') snippets = snippets.concat(parseKeywordSnippets_(resp.getContentText(), 'opentable'));
+    else if (tag === 'ddg_reviews') snippets = snippets.concat(parseKeywordSnippets_(resp.getContentText(), 'google_snippet'));
+  }
+
+  return {
+    places: dedupeHealthyPlaces_(places),
+    snippets: snippets.slice(0, 16),
+  };
+}
+
+function fetchHealthyReviews_(idsCsv, city, namesCsv) {
+  var ids = String(idsCsv || '')
+    .split(',')
+    .map(function (s) {
+      return s.trim();
+    })
+    .filter(Boolean)
+    .slice(0, 12);
+  var names = String(namesCsv || '').split('|');
+  var props = PropertiesService.getScriptProperties();
+  var yelpKey = props.getProperty('YELP_API_KEY');
+  var reviews = {};
+
+  if (yelpKey && ids.length) {
+    var reqs = ids.map(function (id) {
+      return {
+        url: 'https://api.yelp.com/v3/businesses/' + encodeURIComponent(id) + '/reviews?limit=3',
+        method: 'get',
+        muteHttpExceptions: true,
+        headers: { Authorization: 'Bearer ' + yelpKey },
+      };
+    });
+    var responses = UrlFetchApp.fetchAll(reqs);
+    var needFallback = [];
+    for (var i = 0; i < ids.length; i++) {
+      var resp = responses[i];
+      var code = resp.getResponseCode();
+      if (code === 200) {
+        try {
+          var data = JSON.parse(resp.getContentText());
+          reviews[ids[i]] = (data.reviews || []).map(function (r) {
+            return {
+              text: r.text || '',
+              url: r.url || null,
+              rating: r.rating != null ? r.rating : null,
+            };
+          });
+        } catch (e) {
+          needFallback.push(i);
+        }
+      } else {
+        needFallback.push(i);
+      }
+    }
+
+    if (needFallback.length) {
+      var ddgReqs = [];
+      var ddgIdx = [];
+      for (var f = 0; f < needFallback.length; f++) {
+        var ni = needFallback[f];
+        var nm = names[ni] || ids[ni];
+        if (!nm) continue;
+        ddgReqs.push(
+          ddgRequest_('"' + nm + '" ' + city + ' (grass-fed OR "avocado oil" OR pasture) review'),
+        );
+        ddgIdx.push(ids[ni]);
+      }
+      if (ddgReqs.length) {
+        var ddgRes = UrlFetchApp.fetchAll(ddgReqs);
+        for (var d = 0; d < ddgRes.length; d++) {
+          var snips = parseKeywordSnippets_(ddgRes[d].getContentText(), 'google_snippet');
+          reviews[ddgIdx[d]] = snips.map(function (s) {
+            return { text: s.text || '', url: s.url || null, rating: null };
+          });
+        }
+      }
+    }
+  }
+
+  return { reviews: reviews };
 }
