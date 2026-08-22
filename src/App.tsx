@@ -29,7 +29,7 @@ import {
   toggleShortlist,
   type ShortlistItem,
 } from './lib/taste'
-import type { CitySelection, CuisineId, DietaryId, RankedRestaurant, Restaurant, TasteProfile } from './lib/types'
+import type { CitySelection, CuisineId, DietaryId, MapBounds, RankedRestaurant, Restaurant, TasteProfile } from './lib/types'
 import { CuisineStep } from './components/CuisineStep'
 import { ResultsStep } from './components/ResultsStep'
 import { SettingsPage } from './components/SettingsPage'
@@ -125,6 +125,36 @@ function SearchFlow() {
   const seedOilBoostRef = useRef(false)
   const tasteRef = useRef(taste)
   tasteRef.current = taste
+
+  const schedulePrefetch = useCallback((bounds: MapBounds) => {
+    prefetchPromiseRef.current = null
+    const promise = fetchRestaurants(bounds)
+      .then((raw) => {
+        poolRef.current = raw
+        setRawPlaces(raw)
+        return raw
+      })
+      .catch((err) => {
+        prefetchPromiseRef.current = null
+        throw err
+      })
+    prefetchPromiseRef.current = promise
+  }, [])
+
+  const loadRestaurantPool = useCallback(async (bounds: MapBounds, signal?: AbortSignal): Promise<Restaurant[]> => {
+    if (poolRef.current.length) return poolRef.current
+
+    const prefetch = prefetchPromiseRef.current
+    if (prefetch) {
+      try {
+        return await prefetch
+      } catch {
+        prefetchPromiseRef.current = null
+      }
+    }
+
+    return fetchRestaurants(bounds, signal)
+  }, [])
 
   const places = displayPlaces
 
@@ -259,7 +289,7 @@ function SearchFlow() {
       setLoading(true)
       setDisplayPlaces([])
       try {
-        const raw = await (prefetchPromiseRef.current ?? fetchRestaurants(selection.bounds, ctrl.signal))
+        const raw = await loadRestaurantPool(selection.bounds, ctrl.signal)
         if (ctrl.signal.aborted) return
         rankPool(raw)
       } catch (e) {
@@ -270,7 +300,7 @@ function SearchFlow() {
         setLoading(false)
       }
     },
-    [],
+    [loadRestaurantPool],
   )
 
   const searchAgain = useCallback(async () => {
@@ -292,7 +322,7 @@ function SearchFlow() {
     try {
       let pool = poolRef.current.length ? poolRef.current : rawPlaces
       if (pool.length === 0) {
-        pool = await (prefetchPromiseRef.current ?? fetchRestaurants(city.bounds, ctrl.signal))
+        pool = await loadRestaurantPool(city.bounds, ctrl.signal)
         if (ctrl.signal.aborted) return
         poolRef.current = pool
         setRawPlaces(pool)
@@ -325,16 +355,12 @@ function SearchFlow() {
     } finally {
       if (!ctrl.signal.aborted) setLoading(false)
     }
-  }, [city, cuisines, dietary, keyword, taste, displayPlaces, favoriteIds, seenIds, rawPlaces])
+  }, [city, cuisines, dietary, keyword, taste, displayPlaces, favoriteIds, seenIds, rawPlaces, loadRestaurantPool])
 
   useEffect(() => {
-    if (!city || prefetchPromiseRef.current) return
-    prefetchPromiseRef.current = fetchRestaurants(city.bounds).then((raw) => {
-      poolRef.current = raw
-      setRawPlaces(raw)
-      return raw
-    })
-  }, [city])
+    if (!city) return
+    schedulePrefetch(city.bounds)
+  }, [city, schedulePrefetch])
 
   // Auto-run when shared URL has city + cuisines or keyword
   useEffect(() => {
@@ -350,11 +376,6 @@ function SearchFlow() {
     setStep('cuisine')
     poolRef.current = []
     setRawPlaces([])
-    prefetchPromiseRef.current = fetchRestaurants(selection.bounds).then((raw) => {
-      poolRef.current = raw
-      setRawPlaces(raw)
-      return raw
-    })
     setParams((prev) => {
       const next = new URLSearchParams(prev)
       next.set('city', selection.label)
