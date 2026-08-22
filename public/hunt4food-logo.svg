@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 110" fill="none" role="img" aria-label="Hunt 4 Food">
+  <!-- Bow left of H -->
+  <path d="M6 62 C6 36, 22 16, 48 16 C62 16, 72 24, 78 36" stroke="#1f4d2b" stroke-width="3.5" stroke-linecap="round"/>
+  <path d="M6 62 V74" stroke="#1f4d2b" stroke-width="3" stroke-linecap="round"/>
+
+  <!-- Arrow through Hunt -->
+  <path d="M14 54 H132" stroke="#1f4d2b" stroke-width="2.6" stroke-linecap="round"/>
+  <path d="M132 54 L120 48 L120 60 Z" fill="#1f4d2b"/>
+  <path d="M18 54 L10 46 M18 54 L10 62" stroke="#1f4d2b" stroke-width="2.2" stroke-linecap="round"/>
+
+  <!-- Hunt -->
+  <text x="36" y="78" fill="#1f4d2b" font-family="Arial, Helvetica, sans-serif" font-weight="800" font-size="56">Hunt</text>
+
+  <!-- 4 = fork + knife -->
+  <g transform="translate(168 18)" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M16 44 L13 6" stroke="#8dc63f" stroke-width="3.4"/>
+    <path d="M26 44 L26 2" stroke="#8dc63f" stroke-width="3.4"/>
+    <path d="M36 44 L33 6" stroke="#8dc63f" stroke-width="3.4"/>
+    <path d="M8 46 H40" stroke="#8dc63f" stroke-width="3.8"/>
+    <path d="M10 46 L34 78" stroke="#8dc63f" stroke-width="3.6"/>
+    <path d="M34 46 V78" stroke="#8dc63f" stroke-width="3.8"/>
+    <path d="M10 46 L2 38" stroke="#8dc63f" stroke-width="3"/>
+  </g>
+
+  <!-- Food -->
+  <text x="236" y="78" fill="#5a9a4a" font-family="Arial, Helvetica, sans-serif" font-weight="700" font-size="56">Food</text>
+
+  <!-- Leaves on d -->
+  <g fill="#5a9a4a">
+    <path d="M438 24 C445 16, 456 16, 460 24 C455 27, 447 28, 438 24 Z"/>
+    <path d="M450 18 C458 8, 472 10, 468 22 C463 24, 455 22, 450 18 Z"/>
+  </g>
+  <g stroke="#5a9a4a" stroke-width="1.5" fill="none" stroke-linecap="round">
+    <path d="M438 24 C438 32, 444 38, 450 35"/>
+    <path d="M450 18 C453 26, 462 30, 468 24"/>
+  </g>
+</svg>

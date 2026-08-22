@@ -14,7 +14,7 @@ GitHub Pages is static — the browser cannot scrape Yelp or TripAdvisor directl
    - Who has access: **Anyone**
 5. Copy the **`/exec`** URL (looks like `https://script.google.com/macros/s/…/exec`)
 
-## Wire into OpenPlate
+## Wire into Hunt4Food
 
 **Option A — GitHub Pages (recommended)**
 

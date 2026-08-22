@@ -1,34 +1,63 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  createContext,
+  lazy,
+  Suspense,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { HashRouter, Link, Navigate, Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { cuisineById, isKnownCuisineId, isKnownDietaryId } from './data/cuisines'
 import { usePlaceDishes } from './hooks/usePlaceDishes'
 import { usePlaceRatings } from './hooks/usePlaceRatings'
 import { usePlaceSeedOil } from './hooks/usePlaceSeedOil'
 import { buildSearchShareUrl } from './lib/links'
+import { coordsToCitySelection } from './lib/geocode'
 import { ensureCacheGeneration, pruneExpiredCache } from './lib/storage'
 import { fetchRestaurants } from './lib/overpass'
 import { rankRestaurants } from './lib/rank'
 import { seedOilGradeScore } from './lib/seedOil'
 import {
+  loadRecentCities,
   loadShortlist,
   loadTaste,
   lovePlace,
+  recentToCitySelection,
   saveShortlist,
-  setDietaryPrefs,
   skipPlace,
   toggleShortlist,
   type ShortlistItem,
 } from './lib/taste'
-import type { CitySelection, CuisineId, DietaryId, RankedRestaurant, Restaurant, TasteProfile } from './lib/types'
+import type { CitySelection, CuisineId, DietaryId, MapBounds, RankedRestaurant, Restaurant, TasteProfile } from './lib/types'
 import { CuisineStep } from './components/CuisineStep'
 import { ResultsStep } from './components/ResultsStep'
 import { SettingsPage } from './components/SettingsPage'
 import { TastePage } from './components/TastePage'
+import { BrandMark, brandAriaLabel } from './components/BrandMark'
 import './App.css'
 
 const CityStep = lazy(() =>
   import('./components/CityStep').then((m) => ({ default: m.CityStep })),
 )
+
+type SearchNavState = {
+  onNewCity: () => void
+  showNewCity: boolean
+}
+
+const SearchNavContext = createContext<{
+  searchNav: SearchNavState | null
+  setSearchNav: (state: SearchNavState | null) => void
+} | null>(null)
+
+function useSearchNav() {
+  const ctx = useContext(SearchNavContext)
+  if (!ctx) throw new Error('useSearchNav must be used within SearchNavContext')
+  return ctx
+}
 
 function cityFromParams(params: URLSearchParams): CitySelection | null {
   const label = params.get('city')
@@ -52,10 +81,17 @@ function useTaste() {
   return { taste, setTaste }
 }
 
+function hasSearchCriteria(cuisines: CuisineId[], keyword: string): boolean {
+  return cuisines.length > 0 || keyword.trim().length > 0
+}
+
 function SearchFlow() {
+  const { setSearchNav } = useSearchNav()
   const [params, setParams] = useSearchParams()
   const { taste, setTaste } = useTaste()
   const restored = cityFromParams(params)
+  const initialRecentRef = useRef(restored ? null : loadRecentCities()[0])
+  const initialRecent = initialRecentRef.current
   const initialCuisines = useMemo(() => {
     const c = params.get('cuisines')
     if (!c) return [] as CuisineId[]
@@ -66,13 +102,19 @@ function SearchFlow() {
   }, [params])
 
   const [step, setStep] = useState<'city' | 'cuisine' | 'results'>(() => {
-    if (restored && initialCuisines.length) return 'results'
-    if (restored) return 'cuisine'
+    const restoredKeyword = (params.get('keyword') ?? '').trim()
+    if (restored && (initialCuisines.length > 0 || restoredKeyword)) return 'results'
+    if (restored || initialRecent) return 'cuisine'
     return 'city'
   })
-  const [city, setCity] = useState<CitySelection | null>(() => restored)
+  const [city, setCity] = useState<CitySelection | null>(
+    () => restored ?? (initialRecent ? recentToCitySelection(initialRecent) : null),
+  )
+  const [resolvingLocation, setResolvingLocation] = useState(
+    () => !restored && !initialRecent && typeof navigator !== 'undefined' && 'geolocation' in navigator,
+  )
   const [cuisines, setCuisines] = useState<CuisineId[]>(() => initialCuisines)
-  const [dietary, setDietary] = useState<DietaryId[]>(() => {
+  const [dietary] = useState<DietaryId[]>(() => {
     const d = params.get('dietary')
     if (d) return d.split(',').filter((id) => isKnownDietaryId(id)) as DietaryId[]
     return taste.dietaryPrefs
@@ -86,6 +128,7 @@ function SearchFlow() {
   const [error, setError] = useState<string | null>(null)
   const [openNowOnly, setOpenNowOnly] = useState(false)
   const [hasWebsiteOnly, setHasWebsiteOnly] = useState(false)
+  const [noFastFood, setNoFastFood] = useState(false)
   const [shortlist, setShortlist] = useState<ShortlistItem[]>(() => loadShortlist())
   const [shareMessage, setShareMessage] = useState<string | null>(null)
   const searchAbortRef = useRef<AbortController | null>(null)
@@ -94,7 +137,39 @@ function SearchFlow() {
   const autoRanRef = useRef(false)
   const seedOilBoostRef = useRef(false)
   const tasteRef = useRef(taste)
+  const noFastFoodRef = useRef(noFastFood)
   tasteRef.current = taste
+  noFastFoodRef.current = noFastFood
+
+  const schedulePrefetch = useCallback((bounds: MapBounds) => {
+    prefetchPromiseRef.current = null
+    const promise = fetchRestaurants(bounds)
+      .then((raw) => {
+        poolRef.current = raw
+        setRawPlaces(raw)
+        return raw
+      })
+      .catch((err) => {
+        prefetchPromiseRef.current = null
+        throw err
+      })
+    prefetchPromiseRef.current = promise
+  }, [])
+
+  const loadRestaurantPool = useCallback(async (bounds: MapBounds, signal?: AbortSignal): Promise<Restaurant[]> => {
+    if (poolRef.current.length) return poolRef.current
+
+    const prefetch = prefetchPromiseRef.current
+    if (prefetch) {
+      try {
+        return await prefetch
+      } catch {
+        prefetchPromiseRef.current = null
+      }
+    }
+
+    return fetchRestaurants(bounds, signal)
+  }, [])
 
   const places = displayPlaces
 
@@ -162,6 +237,7 @@ function SearchFlow() {
           keyword: searchKeyword,
           taste: tasteRef.current,
           limit: 10,
+          excludeFastFood: noFastFoodRef.current,
         })
         setDisplayPlaces(ranked)
         setSeenIds(new Set(ranked.map((p) => p.id)))
@@ -176,7 +252,7 @@ function SearchFlow() {
       setLoading(true)
       setDisplayPlaces([])
       try {
-        const raw = await (prefetchPromiseRef.current ?? fetchRestaurants(selection.bounds, ctrl.signal))
+        const raw = await loadRestaurantPool(selection.bounds, ctrl.signal)
         if (ctrl.signal.aborted) return
         rankPool(raw)
       } catch (e) {
@@ -187,11 +263,12 @@ function SearchFlow() {
         setLoading(false)
       }
     },
-    [],
+    [loadRestaurantPool],
   )
 
   const searchAgain = useCallback(async () => {
-    if (!city || cuisines.length === 0) return
+    if (!city || !hasSearchCriteria(cuisines, keyword)) return
+    window.scrollTo({ top: 0, behavior: 'smooth' })
     searchAbortRef.current?.abort()
     const ctrl = new AbortController()
     searchAbortRef.current = ctrl
@@ -208,7 +285,7 @@ function SearchFlow() {
     try {
       let pool = poolRef.current.length ? poolRef.current : rawPlaces
       if (pool.length === 0) {
-        pool = await (prefetchPromiseRef.current ?? fetchRestaurants(city.bounds, ctrl.signal))
+        pool = await loadRestaurantPool(city.bounds, ctrl.signal)
         if (ctrl.signal.aborted) return
         poolRef.current = pool
         setRawPlaces(pool)
@@ -225,6 +302,7 @@ function SearchFlow() {
               taste,
               limit: slots + 15,
               excludeIds: nextSeen,
+              excludeFastFood: noFastFood,
             }).slice(0, slots)
           : []
 
@@ -232,40 +310,35 @@ function SearchFlow() {
       setDisplayPlaces([...favorites, ...fresh])
       setSeenIds(nextSeen)
       setFavoriteIds(new Set(favorites.map((p) => p.id)))
+      window.scrollTo({ top: 0, behavior: 'smooth' })
     } catch (e) {
       if ((e as Error).name === 'AbortError' || ctrl.signal.aborted) return
       setError('Could not fetch more places. Try again in a minute.')
     } finally {
       if (!ctrl.signal.aborted) setLoading(false)
     }
-  }, [city, cuisines, dietary, keyword, taste, displayPlaces, favoriteIds, seenIds, rawPlaces])
+  }, [city, cuisines, dietary, keyword, taste, displayPlaces, favoriteIds, seenIds, rawPlaces, noFastFood, loadRestaurantPool])
 
   useEffect(() => {
-    if (!city || prefetchPromiseRef.current) return
-    prefetchPromiseRef.current = fetchRestaurants(city.bounds).then((raw) => {
-      poolRef.current = raw
-      setRawPlaces(raw)
-      return raw
-    })
-  }, [city])
+    if (!city) return
+    schedulePrefetch(city.bounds)
+  }, [city, schedulePrefetch])
 
-  // Auto-run when shared URL has city + cuisines
+  // Auto-run when shared URL has city + cuisines or keyword
   useEffect(() => {
-    if (autoRanRef.current || !restored || initialCuisines.length === 0) return
+    if (autoRanRef.current || !restored || !hasSearchCriteria(initialCuisines, params.get('keyword') ?? '')) return
     autoRanRef.current = true
     void runSearch(restored, initialCuisines, dietary, keyword)
-  }, [restored, initialCuisines, dietary, keyword, runSearch])
+  }, [restored, initialCuisines, dietary, keyword, runSearch, params])
 
   function confirmCity(selection: CitySelection) {
+    window.scrollTo({ top: 0, behavior: 'smooth' })
     setCity(selection)
     setStep('cuisine')
+    setResolvingLocation(false)
     poolRef.current = []
     setRawPlaces([])
-    prefetchPromiseRef.current = fetchRestaurants(selection.bounds).then((raw) => {
-      poolRef.current = raw
-      setRawPlaces(raw)
-      return raw
-    })
+    schedulePrefetch(selection.bounds)
     setParams((prev) => {
       const next = new URLSearchParams(prev)
       next.set('city', selection.label)
@@ -279,12 +352,54 @@ function SearchFlow() {
     })
   }
 
+  useEffect(() => {
+    if (!initialRecent || restored) return
+    setParams((prev) => {
+      if (prev.get('city')) return prev
+      const next = new URLSearchParams(prev)
+      next.set('city', initialRecent.label)
+      next.set('lat', String(initialRecent.lat))
+      next.set('lon', String(initialRecent.lon))
+      next.set('south', String(initialRecent.south))
+      next.set('west', String(initialRecent.west))
+      next.set('north', String(initialRecent.north))
+      next.set('east', String(initialRecent.east))
+      return next
+    })
+  }, [initialRecent, restored, setParams])
+
+  useEffect(() => {
+    if (restored || initialRecent || !resolvingLocation) return
+
+    let cancelled = false
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        if (cancelled) return
+        try {
+          const selection = await coordsToCitySelection(pos.coords.latitude, pos.coords.longitude)
+          if (!cancelled) confirmCity(selection)
+        } finally {
+          if (!cancelled) setResolvingLocation(false)
+        }
+      },
+      () => {
+        if (!cancelled) setResolvingLocation(false)
+      },
+      { enableHighAccuracy: false, timeout: 12000, maximumAge: 600000 },
+    )
+
+    return () => {
+      cancelled = true
+    }
+  }, [restored, initialRecent, resolvingLocation])
+
   function startFind() {
-    if (!city || cuisines.length === 0) return
-    setTaste(setDietaryPrefs(taste, dietary))
+    if (!city || !hasSearchCriteria(cuisines, keyword)) return
+    window.scrollTo({ top: 0, behavior: 'smooth' })
     setParams((prev) => {
       const next = new URLSearchParams(prev)
-      next.set('cuisines', cuisines.join(','))
+      if (cuisines.length) next.set('cuisines', cuisines.join(','))
+      else next.delete('cuisines')
       next.set('dietary', dietary.join(','))
       const trimmed = keyword.trim()
       if (trimmed) next.set('keyword', trimmed)
@@ -293,6 +408,37 @@ function SearchFlow() {
     })
     void runSearch(city, cuisines, dietary, keyword)
   }
+
+  const startNewCitySearch = useCallback(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+    searchAbortRef.current?.abort()
+    setStep('city')
+    setCity(null)
+    setCuisines([])
+    setKeyword('')
+    setRawPlaces([])
+    setDisplayPlaces([])
+    setFavoriteIds(new Set())
+    setSeenIds(new Set())
+    setLoading(false)
+    setError(null)
+    setOpenNowOnly(false)
+    setHasWebsiteOnly(false)
+    setShareMessage(null)
+    poolRef.current = []
+    prefetchPromiseRef.current = null
+    autoRanRef.current = false
+    seedOilBoostRef.current = false
+    setParams(new URLSearchParams())
+  }, [setParams])
+
+  useEffect(() => {
+    setSearchNav({
+      onNewCity: startNewCitySearch,
+      showNewCity: step !== 'city',
+    })
+    return () => setSearchNav(null)
+  }, [step, startNewCitySearch, setSearchNav])
 
   async function copySearchLink() {
     try {
@@ -314,18 +460,22 @@ function SearchFlow() {
   return (
     <>
       {step === 'city' && (
-        <Suspense fallback={<p className="muted">Loading map…</p>}>
-          <CityStep onConfirm={confirmCity} initial={city} />
-        </Suspense>
+        resolvingLocation ? (
+          <section className="step">
+            <p className="muted">Finding your location…</p>
+          </section>
+        ) : (
+          <Suspense fallback={<p className="muted">Loading map…</p>}>
+            <CityStep onConfirm={confirmCity} initial={city} />
+          </Suspense>
+        )
       )}
       {step === 'cuisine' && city && (
         <CuisineStep
           cityLabel={city.label}
           selected={cuisines}
-          dietary={dietary}
           keyword={keyword}
           onChange={setCuisines}
-          onDietaryChange={setDietary}
           onKeywordChange={setKeyword}
           onBack={() => setStep('city')}
           onNext={startFind}
@@ -342,6 +492,7 @@ function SearchFlow() {
           error={error}
           openNowOnly={openNowOnly}
           hasWebsiteOnly={hasWebsiteOnly}
+          noFastFood={noFastFood}
           ratingsMap={ratingsMap}
           ratingsLoading={ratingsLoading}
           seedOilMap={seedOilMap}
@@ -361,6 +512,7 @@ function SearchFlow() {
           onSearchAgain={() => void searchAgain()}
           onToggleOpenNow={() => setOpenNowOnly((v) => !v)}
           onToggleWebsite={() => setHasWebsiteOnly((v) => !v)}
+          onToggleNoFastFood={() => setNoFastFood((v) => !v)}
           lovedIds={lovedIds}
           shortlistedIds={shortlistedIds}
           shareMessage={shareMessage}
@@ -411,16 +563,7 @@ function SearchFlow() {
             )
           }}
           onBack={() => setStep('cuisine')}
-          onNewSearch={() => {
-            setStep('city')
-            setRawPlaces([])
-            setDisplayPlaces([])
-            setFavoriteIds(new Set())
-            setSeenIds(new Set())
-            poolRef.current = []
-            prefetchPromiseRef.current = null
-            autoRanRef.current = false
-          }}
+          onNewSearch={startNewCitySearch}
         />
       )}
     </>
@@ -494,6 +637,7 @@ function SearchRoute() {
 
 function Shell() {
   const navigate = useNavigate()
+  const [searchNav, setSearchNav] = useState<SearchNavState | null>(null)
 
   useEffect(() => {
     ensureCacheGeneration()
@@ -505,13 +649,19 @@ function Shell() {
   }
 
   return (
+    <SearchNavContext.Provider value={{ searchNav, setSearchNav }}>
     <div className="app-shell">
       <div className="atmosphere" aria-hidden />
       <header className="topbar">
-        <button type="button" className="top-brand" onClick={goHome}>
-          OpenPlate
+        <button type="button" className="top-brand" onClick={goHome} aria-label={brandAriaLabel()}>
+          <BrandMark />
         </button>
         <nav>
+          {searchNav?.showNewCity && (
+            <button type="button" className="topbar-link" onClick={searchNav.onNewCity}>
+              New city
+            </button>
+          )}
           <Link to="/taste">My Taste</Link>
           <Link to="/settings">Settings</Link>
         </nav>
@@ -528,7 +678,7 @@ function Shell() {
       </main>
       <footer className="site-footer">
         <p>
-          Place data ©{' '}
+          <BrandMark size="sm" /> · Place data ©{' '}
           <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">
             OpenStreetMap contributors
           </a>
@@ -540,6 +690,7 @@ function Shell() {
         </p>
       </footer>
     </div>
+    </SearchNavContext.Provider>
   )
 }
 

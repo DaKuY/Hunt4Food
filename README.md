@@ -1,6 +1,6 @@
-# OpenPlate — Restaurant Finder
+# Hunt4Food — Restaurant Finder
 
-Find good restaurants in any city. Pick a place on the map, choose up to three cuisines, get ten ranked recommendations, and open Google / Yelp / TripAdvisor for live reviews.
+Hunt what’s good to eat nearby. Pick a place on the map, choose up to three cuisines, get ten ranked recommendations that taste great (including healthier picks), and open Google / Yelp / TripAdvisor for live reviews.
 
 **Live app (after Pages is enabled):** https://dakuy.github.io/restaurant-finder/
 

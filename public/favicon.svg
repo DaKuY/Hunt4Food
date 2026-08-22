@@ -1,5 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
-  <rect width="64" height="64" rx="16" fill="#12332c"/>
-  <circle cx="32" cy="30" r="14" stroke="#e8c547" stroke-width="3"/>
-  <path d="M20 48c4-6 20-6 24 0" stroke="#3ecfac" stroke-width="3" stroke-linecap="round"/>
+  <rect width="64" height="64" rx="10" fill="#ffffff"/>
+  <path d="M6 42 C6 28, 14 18, 26 18 C32 18, 36 22, 38 28" stroke="#1f4d2b" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+  <path d="M12 38 H34" stroke="#1f4d2b" stroke-width="1.6" stroke-linecap="round"/>
+  <path d="M34 38 L28 34 L28 42 Z" fill="#1f4d2b"/>
+  <path d="M18 48 L16 28 L20 28 L22 48 Z" fill="#1f4d2b"/>
+  <path d="M28 46 L27 24 L29 24 L30 46 Z" fill="#8dc63f"/>
+  <path d="M36 46 L35 26 L37 26 L38 46 Z" fill="#8dc63f"/>
+  <path d="M26 30 H38" stroke="#8dc63f" stroke-width="2" stroke-linecap="round"/>
+  <path d="M27 30 L35 46" stroke="#8dc63f" stroke-width="2" stroke-linecap="round"/>
+  <path d="M35 30 V46" stroke="#8dc63f" stroke-width="2" stroke-linecap="round"/>
+  <path d="M42 48 L41 32 L49 32 L50 48 Z" fill="#5a9a4a"/>
+  <path d="M52 34 C54 30, 58 30, 58 34 C56 35, 54 35, 52 34 Z" fill="#5a9a4a"/>
 </svg>
