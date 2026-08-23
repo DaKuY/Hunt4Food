@@ -10,7 +10,7 @@ import {
 import { HEALTHY_LANE_LABELS, signalSourceLabel } from '../lib/healthySignals'
 import { FIRST_RESULT_ID, scrollToFirstResult } from '../lib/scroll'
 import type { PlaceRatings } from '../lib/ratings'
-import { isFastFood, isProbablyOpenNow } from '../lib/rank'
+import { formatDistanceMiles, isFastFood, isProbablyOpenNow } from '../lib/rank'
 import type { SeedOilInfo } from '../lib/seedOil'
 import type { HealthyLane, RankedRestaurant } from '../lib/types'
 import { RatingsRow } from './RatingsRow'
@@ -133,6 +133,7 @@ export function ResultsStep({
     const dishes = dishesMap[place.id]
     const isFavorite = favoriteIds.has(place.id)
     const signals = place.signals ?? []
+    const distance = formatDistanceMiles(place.distanceKm)
     return (
       <li
         key={place.id}
@@ -160,7 +161,7 @@ export function ResultsStep({
                 · <span className="muted">price…</span>
               </>
             ) : null}
-            {place.distanceKm < 50 ? ` · ${place.distanceKm.toFixed(1)} km` : ''}
+            {distance ? ` · ${distance}` : ''}
             {place.address ? ` · ${place.address}` : ''}
             {place.phone ? (
               <>
