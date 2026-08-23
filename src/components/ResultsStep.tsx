@@ -118,7 +118,7 @@ export function ResultsStep({
     return () => window.clearTimeout(id)
   }, [loading, filtered.length])
 
-  function renderCard(place: RankedRestaurant, index: number) {
+  function renderCard(place: RankedRestaurant, rank: number) {
     const menu = menuOrWebsiteUrl(place, cityLabel)
     const ratings = ratingsMap[place.id] ?? null
     const seedOil = seedOilMap[place.id]
@@ -127,7 +127,7 @@ export function ResultsStep({
     const signals = place.signals ?? []
     return (
       <li key={place.id} className={`result-card${isFavorite ? ' result-card--favorite' : ''}`}>
-        <div className="result-rank">{index + 1}</div>
+        <div className="result-rank">{rank}</div>
         <div className="result-body">
           <h3>
             {place.name}
