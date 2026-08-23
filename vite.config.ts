@@ -1,8 +1,8 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { lodgeAuthPlugin } from './server/vite-plugin.ts'
 
-// Project GitHub Pages URL: https://dakuy.github.io/restaurant-finder/
 export default defineConfig({
-  plugins: [react()],
-  base: '/restaurant-finder/',
+  plugins: [react(), lodgeAuthPlugin()],
+  base: process.env.VITE_BASE ?? '/',
 })

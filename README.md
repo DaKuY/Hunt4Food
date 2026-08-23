@@ -2,7 +2,7 @@
 
 Hunt what’s good to eat nearby. Pick a place on the map, choose up to three cuisines, get ten ranked recommendations that taste great (including healthier picks), and open Google / Yelp / TripAdvisor for live reviews.
 
-**Live app (after Pages is enabled):** https://dakuy.github.io/restaurant-finder/
+**Live app:** https://Hunt4Food.andrewcamero.com (lodge-gated; sign in at https://andrewcamero.com)
 
 ## What it does
 
@@ -12,13 +12,13 @@ Hunt what’s good to eat nearby. Pick a place on the map, choose up to three cu
 4. **My Taste** — mark Loved it / Not for me; profile stays in your browser (export/import JSON to move devices)
 5. **Settings** — Google Places API key override; Yelp/TripAdvisor proxy URL (required for those ratings)
 
-No accounts required for basic use. Data from OpenStreetMap via Photon + Overpass.
+Access is through the andrewcamero.com lodge (session cookie `ac_session` plus a Hunt4Food grant). Data from OpenStreetMap via Photon + Overpass.
 
 ### Google ratings setup (one-time)
 
 1. **Enable Places API (New)** on your Google Cloud project
-2. Restrict the key to HTTP referrer `https://dakuy.github.io/*`
-3. Add repo secret **`VITE_GOOGLE_PLACES_API_KEY`** (Settings → Secrets → Actions) — never commit the key to git
+2. Restrict the key to HTTP referrer `https://Hunt4Food.andrewcamero.com/*`
+3. Add **`VITE_GOOGLE_PLACES_API_KEY`** on Vercel (and never prefix lodge secrets with `VITE_`)
 4. The app caps Google rating lookups at **40/day** and **400/month** automatically
 
 ### Ratings note
@@ -33,13 +33,58 @@ No accounts required for basic use. Data from OpenStreetMap via Photon + Overpas
 3. Optional: add **`YELP_API_KEY`** in Apps Script properties for Yelp Fusion (recommended)
 4. After updating `Code.gs`, redeploy the web app (**Deploy → Manage deployments → Edit → New version**) so TripAdvisor fixes take effect
 
-## One-time GitHub Pages setup
+## Lodge
 
-If the site is not live yet:
+Hunt4Food is a product behind the andrewcamero.com lodge. It does **not** host login, signup, or its own user database. JWT verification runs only on the server (`server/`, Vercel `middleware.ts`); `AUTH_SECRET` must never be prefixed with `VITE_`.
 
-1. Repo **Settings → Pages**
-2. **Source:** GitHub Actions
-3. Merge to `main` (or re-run the **Deploy GitHub Pages** workflow)
+| | |
+| --- | --- |
+| Origin | https://Hunt4Food.andrewcamero.com |
+| Login | https://andrewcamero.com/login?next=https://Hunt4Food.andrewcamero.com |
+| Missing grant | https://andrewcamero.com/?need=Hunt4Food |
+| Cookie | `ac_session` (HS256 JWT, production domain `.andrewcamero.com`) |
+
+### Required env
+
+Copy `.env.example` to `.env` (never commit `.env`):
+
+```
+AUTH_SECRET=<same value as the lodge>
+COOKIE_DOMAIN=.andrewcamero.com
+LODGE_ORIGIN=https://andrewcamero.com
+APP_SLUG=Hunt4Food
+```
+
+Local lodge (typical lodge on port 3000):
+
+```
+AUTH_SECRET=<same value as the local lodge>
+COOKIE_DOMAIN=
+LODGE_ORIGIN=http://localhost:3000
+APP_SLUG=Hunt4Food
+```
+
+`localhost` cookies are host-only and shared across ports, so a lodge session on `http://localhost:3000` is sent to `http://localhost:5173`. Then:
+
+```bash
+npm install
+npm run dev
+```
+
+Visiting this app without `ac_session` redirects to the lodge login. A signed-in **member** without a Hunt4Food grant is redirected to `/?need=Hunt4Food`. **Admin** (`role=admin`, Andrew Camero) is allowed without a grant row. Members start with zero grants; hiding the catalog card is not enough.
+
+Andrew must:
+
+1. Add a Hunt4Food row to lodge `apps.ts` (slug `Hunt4Food`, origin https://Hunt4Food.andrewcamero.com, repo `DaKuY/restaurant-finder`, status `soon` until deployed then `live`, `health: false`).
+2. Grant `Hunt4Food` on **Admin → People** for each member who should use the app.
+
+```bash
+npm test
+npm run build
+npm run preview
+```
+
+Preview is also gated. Node 22 LTS.
 
 ## Local development
 
@@ -48,12 +93,7 @@ npm install
 npm run dev
 ```
 
-```bash
-npm run build
-npm run preview
-```
-
-Note: local preview uses base path `/restaurant-finder/`.
+Requires the Lodge env vars above. Without a valid lodge session the UI never loads.
 
 ## Limits (honest)
 
