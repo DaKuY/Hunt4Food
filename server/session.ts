@@ -1,0 +1,108 @@
+import { needUrl } from './env.ts'
+import {
+  parseSessionPayload,
+  readCookie,
+  SESSION_COOKIE,
+  verifySessionToken,
+  type SessionPayload,
+} from './token.ts'
+
+export type LodgeLookup = 'unauthorized' | 'unavailable' | SessionPayload
+
+export type AuthorizeDeps = {
+  fetchLodge?: (token: string) => Promise<LodgeLookup>
+}
+
+export type GateDecision =
+  | { type: 'allow'; session: SessionPayload }
+  | { type: 'login' }
+  | { type: 'need'; session: SessionPayload }
+
+export function hasAppGrant(session: SessionPayload, slug: string): boolean {
+  if (session.role === 'admin') return true
+  return session.apps.includes(slug)
+}
+
+export function sessionFromUnknown(data: unknown): SessionPayload | null {
+  if (!data || typeof data !== 'object') return null
+  const record = data as Record<string, unknown>
+  if (record.authenticated === false) return null
+  const nested = record.user ?? record.session ?? record
+  if (!nested || typeof nested !== 'object') return null
+  return parseSessionPayload(nested as Record<string, unknown>)
+}
+
+export async function fetchLodgeSession(
+  lodgeOrigin: string,
+  token: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<LodgeLookup> {
+  try {
+    const res = await fetchImpl(`${lodgeOrigin}/api/session`, {
+      method: 'GET',
+      headers: {
+        accept: 'application/json',
+        cookie: `${SESSION_COOKIE}=${token}`,
+      },
+      redirect: 'manual',
+      signal: AbortSignal.timeout(2500),
+    })
+    if (res.status === 401 || res.status === 403) return 'unauthorized'
+    if (!res.ok) return 'unavailable'
+    const data: unknown = await res.json()
+    if (data && typeof data === 'object' && (data as { authenticated?: unknown }).authenticated === false) {
+      return 'unauthorized'
+    }
+    const session = sessionFromUnknown(data)
+    if (!session) return 'unavailable'
+    return session
+  } catch {
+    return 'unavailable'
+  }
+}
+
+export async function authorizeRequest(
+  cookieHeader: string | null | undefined,
+  authSecret: string,
+  lodgeOrigin: string,
+  appSlug: string,
+  deps: AuthorizeDeps = {},
+): Promise<GateDecision> {
+  const token = readCookie(cookieHeader, SESSION_COOKIE)
+  if (!token) return { type: 'login' }
+
+  const jwtSession = await verifySessionToken(token, authSecret)
+  const lodge = await (deps.fetchLodge ?? ((t) => fetchLodgeSession(lodgeOrigin, t)))(token)
+
+  let session: SessionPayload | null = null
+  if (lodge !== 'unauthorized' && lodge !== 'unavailable') {
+    session = lodge
+  } else if (lodge === 'unavailable') {
+    session = jwtSession
+  } else {
+    return { type: 'login' }
+  }
+
+  if (!session) return { type: 'login' }
+  if (!hasAppGrant(session, appSlug)) return { type: 'need', session }
+  return { type: 'allow', session }
+}
+
+export function requestWantsJson(request: Request): boolean {
+  const path = new URL(request.url).pathname
+  if (path === '/api' || path.startsWith('/api/')) return true
+  const xhr = request.headers.get('x-requested-with')
+  if (xhr && xhr.toLowerCase() === 'xmlhttprequest') return true
+  const accept = request.headers.get('accept') ?? ''
+  return accept.includes('application/json') && !accept.includes('text/html')
+}
+
+export function publicOriginFrom(request: Request): string {
+  const url = new URL(request.url)
+  const forwardedHost = request.headers.get('x-forwarded-host')
+  const host = forwardedHost ?? request.headers.get('host') ?? url.host
+  const proto = request.headers.get('x-forwarded-proto') ?? url.protocol.replace(':', '')
+  return `${proto}://${host}`
+}
+
+export { needUrl }
