@@ -86,6 +86,7 @@ export type HealthySignalSource =
   | 'yelp_review'
   | 'google_snippet'
   | 'opentable'
+  | 'tripadvisor'
   | 'seed_oil'
   | 'listing'
 

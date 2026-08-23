@@ -8,7 +8,7 @@ Hunt what’s good to eat nearby. Pick a place on the map, choose up to three cu
 
 1. **City** — type a name or zoom the map to a neighborhood
 2. **Food** — pick **Healthy** (green) for a live review hunt, up to 3 food types, and/or a keyword
-3. **Results** — top 10 from OpenStreetMap, with “why recommended,” **Google / Yelp / TripAdvisor ratings**, website/menu links. Healthy mode also mines Yelp, Google, and OpenTable snippets for grass-fed, avocado oil, smoothie shops, and healthy salmon/chicken.
+3. **Results** — top 10 from OpenStreetMap, with “why recommended,” **Google / Yelp / TripAdvisor ratings**, website/menu links. Healthy mode also mines Yelp, Google, TripAdvisor, and OpenTable snippets for grass-fed, avocado oil, smoothie shops, and healthy salmon/chicken.
 4. **My Taste** — mark Loved it / Not for me; profile stays in your browser (export/import JSON to move devices)
 5. **Settings** — Google Places API key override; Yelp/TripAdvisor proxy URL (required for those ratings)
 

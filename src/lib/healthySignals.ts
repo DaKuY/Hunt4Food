@@ -180,6 +180,8 @@ export function signalSourceLabel(source: HealthySignalSource): string {
       return 'Google snippet'
     case 'opentable':
       return 'OpenTable'
+    case 'tripadvisor':
+      return 'TripAdvisor'
     case 'seed_oil':
       return 'Seed Oil Tracker'
     default:

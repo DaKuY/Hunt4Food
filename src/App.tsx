@@ -241,7 +241,7 @@ function SearchFlow() {
       if (food.includes('healthy')) {
         setLoading(true)
         setDisplayPlaces([])
-        setHealthyStatus('Searching this neighborhood, then checking reviews for grass-fed and avocado oil…')
+        setHealthyStatus('Searching nearby, then reading reviews for grass-fed, clean oils, and healthy picks…')
         try {
           const juicePromise = fetchRestaurants(selection.bounds, ctrl.signal, { includeJuiceShops: true }).then(
             (raw) => {
