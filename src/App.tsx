@@ -323,7 +323,6 @@ function SearchFlow() {
 
   const searchAgain = useCallback(async () => {
     if (!city || !hasSearchCriteria(cuisines, keyword)) return
-    window.scrollTo({ top: 0, behavior: 'smooth' })
     searchAbortRef.current?.abort()
     const ctrl = new AbortController()
     searchAbortRef.current = ctrl
@@ -336,6 +335,7 @@ function SearchFlow() {
     displayPlaces.forEach((p) => {
       if (!favoriteIds.has(p.id)) nextSeen.add(p.id)
     })
+    favorites.forEach((p) => nextSeen.add(p.id))
 
     try {
       let pool = poolRef.current.length ? poolRef.current : rawPlaces
@@ -367,7 +367,6 @@ function SearchFlow() {
       setDisplayPlaces([...favorites, ...fresh])
       setSeenIds(nextSeen)
       setFavoriteIds(new Set(favorites.map((p) => p.id)))
-      window.scrollTo({ top: 0, behavior: 'smooth' })
     } catch (e) {
       if ((e as Error).name === 'AbortError' || ctrl.signal.aborted) return
       setError('Could not fetch more places. Try again in a minute.')
