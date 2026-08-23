@@ -42,7 +42,7 @@ export type HealthyDiscoverPlace = {
 export type HealthySnippet = {
   text?: string
   url?: string | null
-  source?: 'opentable' | 'google_snippet' | 'yelp_review'
+  source?: 'opentable' | 'google_snippet' | 'yelp_review' | 'tripadvisor'
 }
 
 export type HealthyDiscoverResponse = {
@@ -162,7 +162,12 @@ function applySnippets(
     }
     let signals = place.signals ?? []
     for (const snip of hits) {
-      const source = snip.source === 'opentable' ? 'opentable' : 'google_snippet'
+      const source =
+        snip.source === 'opentable'
+          ? 'opentable'
+          : snip.source === 'tripadvisor'
+            ? 'tripadvisor'
+            : 'google_snippet'
       signals = mergeSignals(signals, extractHealthySignals(snip.text ?? '', source))
     }
     return {
@@ -454,7 +459,7 @@ export async function runHealthyHunt(opts: {
         ranked = rankHealthyPool(pool, rankOpts, discovered, snippets)
         displayed = pickHealthyLanes(ranked)
         opts.onProgress?.({
-          status: 'Reading Yelp and OpenTable mentions of grass-fed, avocado oil, and smoothie spots…',
+          status: 'Reading Yelp, TripAdvisor, and OpenTable mentions of grass-fed, avocado oil, and smoothie spots…',
           places: displayed,
         })
       }

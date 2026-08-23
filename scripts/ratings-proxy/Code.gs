@@ -443,6 +443,14 @@ function parseKeywordSnippets_(html, source) {
     out.push({ text: '', url: ot[0].replace(/&amp;/g, '&'), source: 'opentable' });
   }
 
+  if (source === 'tripadvisor') {
+    var taRe = /https?:\/\/(?:www\.)?tripadvisor\.com\/[^\s"'&<>]+/gi;
+    var ta;
+    while ((ta = taRe.exec(html)) !== null && out.length < 12) {
+      out.push({ text: '', url: ta[0].replace(/&amp;/g, '&'), source: 'tripadvisor' });
+    }
+  }
+
   if (out.length) return out;
 
   var plain = html
@@ -522,6 +530,12 @@ function fetchHealthyDiscover_(city, lat, lon, radiusRaw) {
 
   requests.push(ddgRequest_('grass-fed OR "avocado oil" restaurant ' + city + ' site:opentable.com'));
   tags.push('ddg_opentable');
+  requests.push(
+    ddgRequest_(
+      'grass-fed OR "avocado oil" OR "pasture-raised" restaurant ' + city + ' site:tripadvisor.com',
+    ),
+  );
+  tags.push('ddg_tripadvisor');
   requests.push(ddgRequest_(city + ' restaurant "grass-fed" OR "pasture-raised" OR "avocado oil" review'));
   tags.push('ddg_reviews');
 
@@ -553,6 +567,7 @@ function fetchHealthyDiscover_(city, lat, lon, radiusRaw) {
     else if (tag === 'yelp_protein') places = places.concat(parseYelpSearch_(resp, 'protein'));
     else if (tag === 'google') places = places.concat(parseGoogleHealthy_(resp));
     else if (tag === 'ddg_opentable') snippets = snippets.concat(parseKeywordSnippets_(resp.getContentText(), 'opentable'));
+    else if (tag === 'ddg_tripadvisor') snippets = snippets.concat(parseKeywordSnippets_(resp.getContentText(), 'tripadvisor'));
     else if (tag === 'ddg_reviews') snippets = snippets.concat(parseKeywordSnippets_(resp.getContentText(), 'google_snippet'));
   }
 

@@ -35,6 +35,6 @@ TripAdvisor ratings use DuckDuckGo search snippets (TripAdvisor blocks direct sc
 
 ## Healthy search sources
 
-The same web app also serves `source=healthyDiscover` and `source=healthyReviews` (Yelp Fusion search + review excerpts, DuckDuckGo OpenTable and Google snippets, optional server-side Google Places). Existing `yelp` / `google` / `tripadvisor` responses are unchanged.
+The same web app also serves `source=healthyDiscover` and `source=healthyReviews` (Yelp Fusion search + review excerpts, DuckDuckGo OpenTable, TripAdvisor, and Google snippets, optional server-side Google Places). Existing `yelp` / `google` / `tripadvisor` responses are unchanged.
 
 **After updating `Code.gs`, redeploy** (**Deploy → Manage deployments → Edit → New version**) so Healthy review search can use the new endpoints. The `/exec` URL stays the same. Until you redeploy, Healthy still ranks OpenStreetMap + known chains + Seed Oil Tracker, without live review mining.
