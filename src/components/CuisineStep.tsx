@@ -69,9 +69,10 @@ export function CuisineStep({
         </div>
         {healthyOn ? (
           <p className="healthy-helper">
-            We&apos;ll scan Google, Yelp, TripAdvisor, and OpenTable reviews for grass-fed, pasture-raised, no seed
-            oils, avocado oil or butter, smoothie shops like Tropical Smoothie Cafe and Pure Green, and
-            healthy salmon or chicken breast. If reviews mention those, they show on the listing.
+            We search Google, Yelp, TripAdvisor, and OpenTable for reviews mentioning grass-fed and
+            pasture-raised meat, cooking without seed oils, avocado oil or butter, smoothie spots like
+            Tropical Smoothie Cafe and Pure Green, and healthy salmon or chicken. When reviewers talk
+            about those, you&apos;ll see it on each listing.
           </p>
         ) : (
           <p className="muted small">

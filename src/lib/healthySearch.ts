@@ -442,7 +442,7 @@ export async function runHealthyHunt(opts: {
   let ranked = rankHealthyPool(pool, rankOpts)
   let displayed = pickHealthyLanes(ranked)
   opts.onProgress?.({
-    status: 'Searching this neighborhood, then checking reviews for grass-fed and avocado oil…',
+    status: 'Searching nearby, then reading reviews for grass-fed, clean oils, and healthy picks…',
     places: displayed,
   })
 
@@ -459,7 +459,8 @@ export async function runHealthyHunt(opts: {
         ranked = rankHealthyPool(pool, rankOpts, discovered, snippets)
         displayed = pickHealthyLanes(ranked)
         opts.onProgress?.({
-          status: 'Reading Yelp, TripAdvisor, and OpenTable mentions of grass-fed, avocado oil, and smoothie spots…',
+          status:
+            'Checking Google, Yelp, TripAdvisor, and OpenTable for grass-fed, avocado oil, smoothie spots, and more…',
           places: displayed,
         })
       }
