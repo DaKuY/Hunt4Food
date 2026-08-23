@@ -36,6 +36,14 @@ function haversineKm(a: LatLng, b: LatLng): number {
   return 2 * R * Math.asin(Math.sqrt(h))
 }
 
+const KM_TO_MI = 0.621371
+
+/** Format distance for display; returns empty string when too far to show. */
+export function formatDistanceMiles(distanceKm: number): string {
+  if (distanceKm >= 50) return ''
+  return `${(distanceKm * KM_TO_MI).toFixed(1)} mi`
+}
+
 function matchesCuisine(place: Restaurant, cuisineId: CuisineId): boolean {
   const opt = cuisineById(cuisineId)
   const blob = `${place.cuisineRaw ?? ''} ${place.cuisines.join(' ')} ${place.name} ${place.amenity ?? ''}`.toLowerCase()
