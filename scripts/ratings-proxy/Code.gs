@@ -173,19 +173,46 @@ function parseYelpDishesFromHtml_(html) {
 
 function fetchGoogle_(name, city, lat, lon, clientKey) {
   var props = PropertiesService.getScriptProperties();
-  var apiKey = clientKey || props.getProperty('GOOGLE_PLACES_API_KEY');
   var fallbackUrl =
     'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(name + ' ' + city);
-  if (!apiKey) {
-    return {
-      error: 'Google Places key missing — pass googleKey or set GOOGLE_PLACES_API_KEY',
-      rating: null,
-      reviewCount: null,
-      url: fallbackUrl,
-      priceLevel: null,
-    };
+  var ua =
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
+  // Server-side key only — browser keys are referrer-locked and hang the proxy.
+  var apiKey = props.getProperty('GOOGLE_PLACES_API_KEY');
+  if (apiKey) {
+    var apiResult = fetchGooglePlaces_(name, city, lat, lon, apiKey, fallbackUrl);
+    if (apiResult && apiResult.rating != null) return apiResult;
   }
 
+  var queries = [
+    name + ' ' + city + ' google maps restaurant',
+    '"' + name + '" ' + city + ' site:google.com/maps restaurant',
+  ];
+  for (var q = 0; q < queries.length; q++) {
+    var parsed = fetchGoogleFromDdg_(queries[q], fallbackUrl, ua);
+    if (parsed && parsed.rating != null) return parsed;
+  }
+
+  var bingUrl =
+    'https://www.bing.com/search?q=' + encodeURIComponent(name + ' ' + city + ' site:google.com/maps restaurant');
+  var bingHtml = UrlFetchApp.fetch(bingUrl, {
+    muteHttpExceptions: true,
+    headers: { 'User-Agent': ua },
+  }).getContentText();
+  parsed = parseGoogleSnippet_(bingHtml, fallbackUrl, name);
+  if (parsed && parsed.rating != null) return parsed;
+
+  return {
+    rating: null,
+    reviewCount: null,
+    url: fallbackUrl,
+    priceLevel: null,
+    error: apiKey ? null : undefined,
+  };
+}
+
+function fetchGooglePlaces_(name, city, lat, lon, apiKey, fallbackUrl) {
   var body = {
     textQuery: (name + ' ' + city).trim(),
     maxResultCount: 1,
@@ -211,21 +238,11 @@ function fetchGoogle_(name, city, lat, lon, clientKey) {
     muteHttpExceptions: true,
   });
 
-  if (resp.getResponseCode() !== 200) {
-    return {
-      error: 'Google Places ' + resp.getResponseCode(),
-      rating: null,
-      reviewCount: null,
-      url: fallbackUrl,
-      priceLevel: null,
-    };
-  }
+  if (resp.getResponseCode() !== 200) return null;
 
   var data = JSON.parse(resp.getContentText());
   var hit = data.places && data.places[0];
-  if (!hit) {
-    return { rating: null, reviewCount: null, url: fallbackUrl, priceLevel: null };
-  }
+  if (!hit) return null;
 
   return {
     rating: hit.rating != null ? hit.rating : null,
@@ -233,6 +250,60 @@ function fetchGoogle_(name, city, lat, lon, clientKey) {
     url: hit.googleMapsUri || fallbackUrl,
     priceLevel: hit.priceLevel != null ? hit.priceLevel : null,
     matchedName: hit.displayName && hit.displayName.text ? hit.displayName.text : null,
+  };
+}
+
+function fetchGoogleFromDdg_(query, searchFallback, ua) {
+  var ddgUrl = 'https://html.duckduckgo.com/html/?q=' + encodeURIComponent(query);
+  var html = UrlFetchApp.fetch(ddgUrl, {
+    muteHttpExceptions: true,
+    headers: { 'User-Agent': ua },
+  }).getContentText();
+  return parseGoogleSnippet_(html, searchFallback, query);
+}
+
+function parseGoogleSnippet_(html, searchFallback, nameHint) {
+  if (!html) return null;
+  var text = html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ');
+
+  var hint = String(nameHint || '').toLowerCase();
+  var hintToken = hint.split(/\s+/).filter(function (t) {
+    return t.length > 3;
+  })[0];
+  if (hintToken && text.toLowerCase().indexOf(hintToken) < 0) return null;
+
+  var ratingMatch =
+    text.match(/(\d+\.?\d*)\s*(?:stars?|★)/i) ||
+    text.match(/rated\s+(\d+\.?\d*)\s+out\s+of\s+5/i) ||
+    text.match(/(\d+\.?\d*)\s+on\s+Google/i);
+  var countMatch = text.match(/(\d[\d,]*)\s+(?:Google\s+)?reviews/i);
+  var linkMatch = html.match(/uddg=(https[^&"'\\]*google\.com\/maps[^&"'\\]*)/i);
+  if (!linkMatch) {
+    linkMatch = html.match(/href="(https:\/\/(?:www\.)?google\.com\/maps\/place[^"]+)"/i);
+  }
+
+  var url = searchFallback;
+  if (linkMatch) {
+    try {
+      url = decodeURIComponent(linkMatch[1].replace(/&amp;/g, '&'));
+    } catch (e) {
+      url = linkMatch[1].replace(/&amp;/g, '&');
+    }
+  }
+
+  if (!ratingMatch) return null;
+  var rating = Number(ratingMatch[1]);
+  if (rating < 1 || rating > 5) return null;
+
+  return {
+    rating: rating,
+    reviewCount: countMatch ? Number(String(countMatch[1]).replace(/,/g, '')) : null,
+    url: url,
+    priceLevel: null,
   };
 }
 
