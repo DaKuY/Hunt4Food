@@ -84,8 +84,9 @@ export function SettingsPage() {
         <p className="eyebrow">Settings</p>
         <h2>Ratings &amp; API keys</h2>
         <p className="lede">
-          Google ratings and price levels run through the Apps Script proxy (referrer-locked keys cannot call
-          Google from the browser). Yelp and TripAdvisor use the same proxy. Redeploy Code.gs after updates.
+          Google, Yelp, and TripAdvisor ratings run through the free Apps Script proxy. Google and
+          TripAdvisor fall back to public search snippets when the Places API is unavailable — no Google
+          Cloud setup required for basic stars.
         </p>
       </header>
 
@@ -97,20 +98,20 @@ export function SettingsPage() {
         against the limit.
       </p>
 
-      <h3 className="subhead">Google Places</h3>
+      <h3 className="subhead">Google Places (optional)</h3>
       <label className="field">
-        <span>Google Places API key (optional override)</span>
+        <span>Google Places API key (optional — price levels only)</span>
         <input
           type="password"
           value={googleKey}
           onChange={(e) => setGoogleKey(e.target.value)}
-          placeholder="Leave blank to use the built-in site key"
+          placeholder="Leave blank — ratings use search snippets by default"
           autoComplete="off"
         />
       </label>
       <p className="muted small">
-        Enable <strong>Places API (New)</strong>, restrict by HTTP referrer{' '}
-        <code>https://dakuy.github.io/*</code>, and set a daily quota (e.g. 50) as a backup.
+        Ratings work without this. Add a server-side key in Apps Script properties if you want official
+        price levels from the Places API.
       </p>
 
       <label className="field">

@@ -31,7 +31,7 @@ GitHub Pages is static — the browser cannot scrape Yelp or TripAdvisor directl
 
 In Settings, click **Test proxy**. You should see sample Yelp/TripAdvisor/Google ratings within a few seconds.
 
-TripAdvisor ratings use DuckDuckGo search snippets (TripAdvisor blocks direct scraping). The app tries your Apps Script proxy first, then a browser fallback.
+TripAdvisor ratings use DuckDuckGo search snippets (TripAdvisor blocks direct scraping). Google ratings use the same approach when no Places API key is configured on the server. The app tries your Apps Script proxy first, then a browser fallback.
 
 ## Healthy search sources
 
