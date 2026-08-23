@@ -44,19 +44,25 @@ function BoundsWatcher({ onBounds }: { onBounds: (b: MapBounds, center: { lat: n
 }
 
 export function CityStep({ onConfirm, initial }: Props) {
-  const [query, setQuery] = useState(initial?.label ?? '')
+  const lastRecent = initial ? null : loadRecentCities()[0]
+  const [query, setQuery] = useState(initial?.label ?? lastRecent?.label ?? '')
   const [hits, setHits] = useState<GeocodeHit[]>([])
   const [searching, setSearching] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [locating, setLocating] = useState(false)
   const [recent, setRecent] = useState<RecentCity[]>(() => loadRecentCities())
-  const [draft, setDraft] = useState<CitySelection | null>(initial ?? null)
-  const [mapCenter, setMapCenter] = useState<[number, number]>([
-    initial?.center.lat ?? 40.7128,
-    initial?.center.lon ?? -74.006,
-  ])
+  const [draft, setDraft] = useState<CitySelection | null>(() => {
+    if (initial) return initial
+    if (lastRecent) return recentToCitySelection(lastRecent)
+    return null
+  })
+  const [mapCenter, setMapCenter] = useState<[number, number]>(() => {
+    if (initial) return [initial.center.lat, initial.center.lon]
+    if (lastRecent) return [lastRecent.lat, lastRecent.lon]
+    return [40.7128, -74.006]
+  })
   const [mapKey, setMapKey] = useState(0)
-  const skipSearchRef = useRef(Boolean(initial?.label))
+  const skipSearchRef = useRef(Boolean(initial?.label || lastRecent))
 
   function applyLocation(city: CitySelection) {
     skipSearchRef.current = true

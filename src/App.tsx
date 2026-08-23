@@ -26,6 +26,7 @@ import {
   loadShortlist,
   loadTaste,
   lovePlace,
+  pushRecentCity,
   recentToCitySelection,
   saveShortlist,
   skipPlace,
@@ -389,6 +390,12 @@ function SearchFlow() {
 
   function confirmCity(selection: CitySelection) {
     window.scrollTo({ top: 0, behavior: 'smooth' })
+    pushRecentCity({
+      label: selection.label,
+      lat: selection.center.lat,
+      lon: selection.center.lon,
+      ...selection.bounds,
+    })
     setCity(selection)
     setStep('cuisine')
     setResolvingLocation(false)
