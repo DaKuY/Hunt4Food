@@ -8,6 +8,7 @@ import {
   yelpUrl,
 } from '../lib/links'
 import { HEALTHY_LANE_LABELS, signalSourceLabel } from '../lib/healthySignals'
+import { FIRST_RESULT_ID, scrollToFirstResult } from '../lib/scroll'
 import type { PlaceRatings } from '../lib/ratings'
 import { isFastFood, isProbablyOpenNow } from '../lib/rank'
 import type { SeedOilInfo } from '../lib/seedOil'
@@ -54,6 +55,7 @@ type Props = {
   lovedIds: Set<string>
   onBack: () => void
   onNewSearch: () => void
+  scrollToResultsKey?: number
 }
 
 const LANE_ORDER: HealthyLane[] = ['clean_cooking', 'smoothie', 'protein']
@@ -94,6 +96,7 @@ export function ResultsStep({
   lovedIds,
   onBack,
   onNewSearch,
+  scrollToResultsKey = 0,
 }: Props) {
   const filtered = places.filter((p) => {
     if (noFastFood && isFastFood(p)) return false
@@ -118,6 +121,11 @@ export function ResultsStep({
     return () => window.clearTimeout(id)
   }, [loading, filtered.length])
 
+  useEffect(() => {
+    if (!scrollToResultsKey || loading || filtered.length === 0) return
+    scrollToFirstResult()
+  }, [scrollToResultsKey, loading, filtered.length])
+
   function renderCard(place: RankedRestaurant, rank: number) {
     const menu = menuOrWebsiteUrl(place, cityLabel)
     const ratings = ratingsMap[place.id] ?? null
@@ -126,7 +134,11 @@ export function ResultsStep({
     const isFavorite = favoriteIds.has(place.id)
     const signals = place.signals ?? []
     return (
-      <li key={place.id} className={`result-card${isFavorite ? ' result-card--favorite' : ''}`}>
+      <li
+        key={place.id}
+        id={rank === 1 ? FIRST_RESULT_ID : undefined}
+        className={`result-card${isFavorite ? ' result-card--favorite' : ''}`}
+      >
         <div className="result-rank">{rank}</div>
         <div className="result-body">
           <h3>
