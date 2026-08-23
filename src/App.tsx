@@ -133,6 +133,7 @@ function SearchFlow() {
   const [shortlist, setShortlist] = useState<ShortlistItem[]>(() => loadShortlist())
   const [shareMessage, setShareMessage] = useState<string | null>(null)
   const [healthyStatus, setHealthyStatus] = useState<string | null>(null)
+  const [scrollToResultsKey, setScrollToResultsKey] = useState(0)
   const searchAbortRef = useRef<AbortController | null>(null)
   const prefetchPromiseRef = useRef<Promise<Restaurant[]> | null>(null)
   const poolRef = useRef<Restaurant[]>([])
@@ -372,7 +373,10 @@ function SearchFlow() {
       if ((e as Error).name === 'AbortError' || ctrl.signal.aborted) return
       setError('Could not fetch more places. Try again in a minute.')
     } finally {
-      if (!ctrl.signal.aborted) setLoading(false)
+      if (!ctrl.signal.aborted) {
+        setLoading(false)
+        setScrollToResultsKey((k) => k + 1)
+      }
     }
   }, [city, cuisines, dietary, keyword, taste, displayPlaces, favoriteIds, seenIds, rawPlaces, noFastFood, loadRestaurantPool])
 
@@ -458,7 +462,7 @@ function SearchFlow() {
 
   function startFind() {
     if (!city || !hasSearchCriteria(cuisines, keyword)) return
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+    setScrollToResultsKey((k) => k + 1)
     setParams((prev) => {
       const next = new URLSearchParams(prev)
       if (cuisines.length) next.set('cuisines', cuisines.join(','))
@@ -631,6 +635,7 @@ function SearchFlow() {
           }}
           onBack={() => setStep('cuisine')}
           onNewSearch={startNewCitySearch}
+          scrollToResultsKey={scrollToResultsKey}
         />
       )}
     </>
