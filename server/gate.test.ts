@@ -1,15 +1,15 @@
 import { SignJWT } from 'jose'
 import { describe, expect, it } from 'vitest'
-import { lodgeEnvFrom, loginUrl, needUrl } from './env'
-import { handleLodgeGate, isUngatedPath } from './gate'
+import { lodgeEnvFrom, loginUrl, needUrl } from './env.js'
+import { handleLodgeGate, isUngatedPath } from './gate.js'
 import {
   authorizeRequest,
   fetchLodgeSession,
   hasAppGrant,
   sessionFromUnknown,
   type LodgeLookup,
-} from './session'
-import { parseSessionPayload, SESSION_COOKIE, type SessionPayload } from './token'
+} from './session.js'
+import { parseSessionPayload, SESSION_COOKIE, type SessionPayload } from './token.js'
 
 const SECRET = 'test-auth-secret-that-is-long-enough'
 const SLUG = 'Hunt4Food'

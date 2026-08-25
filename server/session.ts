@@ -1,4 +1,4 @@
-import { needUrl } from './env'
+import { needUrl } from './env.js'
 import {
   hasAppGrant,
   parseSessionPayload,
@@ -6,7 +6,7 @@ import {
   SESSION_COOKIE,
   verifySessionToken,
   type SessionPayload,
-} from './token'
+} from './token.js'
 
 export type LodgeLookup = 'unauthorized' | 'unavailable' | SessionPayload
 

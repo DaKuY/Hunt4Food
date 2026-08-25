@@ -1,11 +1,11 @@
-import { lodgeEnvFrom, loginUrl, needUrl, type LodgeEnv } from './env'
+import { lodgeEnvFrom, loginUrl, needUrl, type LodgeEnv } from './env.js'
 import {
   authorizeRequest,
   publicOriginFrom,
   requestWantsJson,
   type AuthorizeDeps,
   type GateDecision,
-} from './session'
+} from './session.js'
 
 export type { LodgeEnv }
 export { lodgeEnvFrom }

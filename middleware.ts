@@ -1,5 +1,5 @@
 import { next } from '@vercel/functions'
-import { handleLodgeGate } from './server/gate'
+import { handleLodgeGate } from './server/gate.js'
 
 export const config = {
   runtime: 'nodejs',
