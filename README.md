@@ -12,7 +12,7 @@ Hunt what’s good to eat nearby. Pick a place on the map, choose up to three cu
 4. **My Taste** — mark Loved it / Not for me; profile stays in your browser (export/import JSON to move devices)
 5. **Settings** — Google Places API key override; Yelp/TripAdvisor proxy URL (required for those ratings)
 
-Access is through the andrewcamero.com lodge (session cookie `ac_session` plus a Hunt4Food grant). Data from OpenStreetMap via Photon + Overpass.
+Access is through the andrewcamero.com lodge: you must be logged in (`ac_session`). Data from OpenStreetMap via Photon + Overpass.
 
 ### Google ratings setup (one-time)
 
@@ -43,8 +43,8 @@ Hunt4Food is a product behind the andrewcamero.com lodge. It does **not** host l
 | --- | --- |
 | Origin | https://hunt4food.andrewcamero.com |
 | Login | https://andrewcamero.com/login?next=https://hunt4food.andrewcamero.com |
-| Missing grant | https://andrewcamero.com/?need=Hunt4Food |
 | Cookie | `ac_session` (HS256 JWT, production domain `.andrewcamero.com`) |
+| Access | Any logged-in lodge user (no Hunt4Food grant required) |
 | Catalog slug | `Hunt4Food` (not `food`) |
 | Vercel | **this** Vite project only — not the lodge project |
 
@@ -81,9 +81,7 @@ npm install
 npm run dev
 ```
 
-Visiting this app without `ac_session` redirects to the lodge login. A signed-in **member** without a Hunt4Food grant is redirected to `/?need=Hunt4Food`. **Admin** (`admin: true` or `role=admin`, Andrew Camero) is allowed without a grant row. Members start with zero grants; hiding the catalog card is not enough.
-
-Grant `Hunt4Food` on the lodge **Admin desk** for each member who should use the app.
+Visiting this app without `ac_session` redirects to the lodge login. A valid lodge session (member or admin) is enough to use the app; a Hunt4Food grant row is not required.
 
 ```bash
 npm test

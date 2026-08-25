@@ -1,10 +1,9 @@
-import { lodgeEnvFrom, loginUrl, needUrl, type LodgeEnv } from './env.js'
+import { lodgeEnvFrom, loginUrl, type LodgeEnv } from './env.js'
 import {
   authorizeRequest,
   publicOriginFrom,
   requestWantsJson,
   type AuthorizeDeps,
-  type GateDecision,
 } from './session.js'
 
 export type { LodgeEnv }
@@ -45,30 +44,18 @@ export async function handleLodgeGate(
     request.headers.get('cookie'),
     env.AUTH_SECRET,
     env.LODGE_ORIGIN,
-    env.APP_SLUG,
     deps,
   )
   if (decision.type === 'allow') return null
-  return responseForDecision(decision, request, env)
+  return loginResponse(request, env)
 }
 
-export function responseForDecision(
-  decision: Exclude<GateDecision, { type: 'allow' }>,
-  request: Request,
-  env: LodgeEnv,
-): Response {
-  const json = requestWantsJson(request)
-  if (decision.type === 'login') {
-    if (json) {
-      return jsonResponse({ error: 'unauthorized' }, 401)
-    }
-    const next = publicOriginFrom(request)
-    return Response.redirect(loginUrl(env.LODGE_ORIGIN, next), 302)
+function loginResponse(request: Request, env: LodgeEnv): Response {
+  if (requestWantsJson(request)) {
+    return jsonResponse({ error: 'unauthorized' }, 401)
   }
-  if (json) {
-    return jsonResponse({ error: 'forbidden', need: env.APP_SLUG }, 403)
-  }
-  return Response.redirect(needUrl(env.LODGE_ORIGIN, env.APP_SLUG), 302)
+  const next = publicOriginFrom(request)
+  return Response.redirect(loginUrl(env.LODGE_ORIGIN, next), 302)
 }
 
 function jsonResponse(body: unknown, status: number): Response {

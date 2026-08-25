@@ -1,4 +1,3 @@
-import { needUrl } from './env.js'
 import {
   hasAppGrant,
   parseSessionPayload,
@@ -17,7 +16,6 @@ export type AuthorizeDeps = {
 export type GateDecision =
   | { type: 'allow'; session: SessionPayload }
   | { type: 'login' }
-  | { type: 'need'; session: SessionPayload }
 
 export { hasAppGrant }
 
@@ -70,7 +68,6 @@ export async function authorizeRequest(
   cookieHeader: string | null | undefined,
   authSecret: string,
   lodgeOrigin: string,
-  appSlug: string,
   deps: AuthorizeDeps = {},
 ): Promise<GateDecision> {
   const token = readCookie(cookieHeader, SESSION_COOKIE)
@@ -81,7 +78,7 @@ export async function authorizeRequest(
 
   let session: SessionPayload | null = null
   if (lodge !== 'unauthorized' && lodge !== 'unavailable') {
-    // Prefer the lodge user object (fresh grants) over a stale JWT apps[].
+    // Prefer the live lodge user over a stale JWT.
     session = lodge
   } else if (lodge === 'unavailable') {
     session = jwtSession
@@ -90,7 +87,6 @@ export async function authorizeRequest(
   }
 
   if (!session) return { type: 'login' }
-  if (!hasAppGrant(session, appSlug)) return { type: 'need', session }
   return { type: 'allow', session }
 }
 
@@ -110,5 +106,3 @@ export function publicOriginFrom(request: Request): string {
   const proto = request.headers.get('x-forwarded-proto') ?? url.protocol.replace(':', '')
   return `${proto}://${host}`
 }
-
-export { needUrl }
