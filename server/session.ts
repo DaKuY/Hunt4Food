@@ -1,5 +1,6 @@
 import { needUrl } from './env.ts'
 import {
+  hasAppGrant,
   parseSessionPayload,
   readCookie,
   SESSION_COOKIE,
@@ -18,16 +19,17 @@ export type GateDecision =
   | { type: 'login' }
   | { type: 'need'; session: SessionPayload }
 
-export function hasAppGrant(session: SessionPayload, slug: string): boolean {
-  if (session.role === 'admin') return true
-  return session.apps.includes(slug)
-}
+export { hasAppGrant }
 
 export function sessionFromUnknown(data: unknown): SessionPayload | null {
   if (!data || typeof data !== 'object') return null
   const record = data as Record<string, unknown>
   if (record.authenticated === false) return null
-  const nested = record.user ?? record.session ?? record
+  if ('user' in record) {
+    if (!record.user || typeof record.user !== 'object') return null
+    return parseSessionPayload(record.user as Record<string, unknown>)
+  }
+  const nested = record.session ?? record
   if (!nested || typeof nested !== 'object') return null
   return parseSessionPayload(nested as Record<string, unknown>)
 }
@@ -50,6 +52,9 @@ export async function fetchLodgeSession(
     if (res.status === 401 || res.status === 403) return 'unauthorized'
     if (!res.ok) return 'unavailable'
     const data: unknown = await res.json()
+    if (data && typeof data === 'object' && (data as { user?: unknown }).user === null) {
+      return 'unauthorized'
+    }
     if (data && typeof data === 'object' && (data as { authenticated?: unknown }).authenticated === false) {
       return 'unauthorized'
     }
@@ -76,6 +81,7 @@ export async function authorizeRequest(
 
   let session: SessionPayload | null = null
   if (lodge !== 'unauthorized' && lodge !== 'unavailable') {
+    // Prefer the lodge user object (fresh grants) over a stale JWT apps[].
     session = lodge
   } else if (lodge === 'unavailable') {
     session = jwtSession
