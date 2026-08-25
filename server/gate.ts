@@ -1,11 +1,11 @@
-import { lodgeEnvFrom, loginUrl, needUrl, type LodgeEnv } from './env.ts'
+import { lodgeEnvFrom, loginUrl, needUrl, type LodgeEnv } from './env'
 import {
   authorizeRequest,
   publicOriginFrom,
   requestWantsJson,
   type AuthorizeDeps,
   type GateDecision,
-} from './session.ts'
+} from './session'
 
 export type { LodgeEnv }
 export { lodgeEnvFrom }
@@ -36,7 +36,7 @@ export function isUngatedPath(pathname: string): boolean {
 
 export async function handleLodgeGate(
   request: Request,
-  env: LodgeEnv = lodgeEnvFrom(process.env),
+  env: LodgeEnv = lodgeEnvFrom(runtimeEnv()),
   deps: AuthorizeDeps = {},
 ): Promise<Response | null> {
   const pathname = new URL(request.url).pathname
@@ -76,4 +76,9 @@ function jsonResponse(body: unknown, status: number): Response {
     status,
     headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'private, no-store' },
   })
+}
+
+function runtimeEnv(): Record<string, string | undefined> {
+  const proc = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process
+  return proc?.env ?? {}
 }

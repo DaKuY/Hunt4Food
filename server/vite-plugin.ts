@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { loadEnv, type Connect, type Plugin, type ViteDevServer } from 'vite'
-import { handleLodgeGate, lodgeEnvFrom, type LodgeEnv } from './gate.ts'
+import { handleLodgeGate, lodgeEnvFrom, type LodgeEnv } from './gate'
 
 export function lodgeAuthPlugin(): Plugin {
   return {

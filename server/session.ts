@@ -1,4 +1,4 @@
-import { needUrl } from './env.ts'
+import { needUrl } from './env'
 import {
   hasAppGrant,
   parseSessionPayload,
@@ -6,7 +6,7 @@ import {
   SESSION_COOKIE,
   verifySessionToken,
   type SessionPayload,
-} from './token.ts'
+} from './token'
 
 export type LodgeLookup = 'unauthorized' | 'unavailable' | SessionPayload
 
