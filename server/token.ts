@@ -1,5 +1,6 @@
 /**
- * Lodge session token helper (same contract as the lodge `web/src/lib/token.ts`).
+ * Lodge session token helper — same contract as
+ * DaKuY/andrewcamero.com-orchestrator `src/lib/token.ts`.
  * Cookie name, HS256, and claim shape must stay aligned with andrewcamero.com.
  */
 import { jwtVerify, type JWTPayload } from 'jose'
@@ -12,31 +13,51 @@ export type SessionPayload = {
   id: string
   email: string
   name: string
+  admin: boolean
   role: Role
   apps: string[]
   tokenVersion: number
+}
+
+function asNonEmptyString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined
+}
+
+function asFiniteNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
 function isRole(value: unknown): value is Role {
   return value === 'admin' || value === 'member'
 }
 
+/** Admin bypasses grants. Members need APP_SLUG on apps[] (case-insensitive). */
+export function hasAppGrant(
+  session: { admin?: boolean; role?: string; apps?: unknown } | null | undefined,
+  slug: string,
+): boolean {
+  if (!session || !slug) return false
+  if (session.admin === true || session.role === 'admin') return true
+  const apps = session.apps
+  if (!Array.isArray(apps)) return false
+  const want = slug.toLowerCase()
+  return apps.some((app) => typeof app === 'string' && app.toLowerCase() === want)
+}
+
 export function parseSessionPayload(payload: JWTPayload | Record<string, unknown>): SessionPayload | null {
-  const id = payload.id
-  const email = payload.email
-  const name = payload.name
-  const role = payload.role
+  const id = asNonEmptyString(payload.id) ?? asNonEmptyString(payload.sub)
+  const email = asNonEmptyString(payload.email)
+  const name = typeof payload.name === 'string' ? payload.name : undefined
   const apps = payload.apps
-  const tokenVersion = payload.tokenVersion
+  const tokenVersion = asFiniteNumber(payload.tokenVersion) ?? asFiniteNumber(payload.tv)
 
-  if (typeof id !== 'string' || id.length === 0) return null
-  if (typeof email !== 'string' || email.length === 0) return null
-  if (typeof name !== 'string') return null
-  if (!isRole(role)) return null
+  if (!id || !email || name === undefined || tokenVersion === undefined) return null
   if (!Array.isArray(apps) || !apps.every((app) => typeof app === 'string')) return null
-  if (typeof tokenVersion !== 'number' || !Number.isFinite(tokenVersion)) return null
 
-  return { id, email, name, role, apps, tokenVersion }
+  const admin = payload.admin === true || payload.role === 'admin'
+  const role: Role = admin ? 'admin' : isRole(payload.role) ? payload.role : 'member'
+
+  return { id, email, name, admin, role, apps, tokenVersion }
 }
 
 export async function verifySessionToken(

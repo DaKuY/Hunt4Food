@@ -2,7 +2,7 @@
 
 Hunt what’s good to eat nearby. Pick a place on the map, choose up to three cuisines, get ten ranked recommendations that taste great (including healthier picks), and open Google / Yelp / TripAdvisor for live reviews.
 
-**Live app:** https://Hunt4Food.andrewcamero.com (lodge-gated; sign in at https://andrewcamero.com)
+**Live app:** https://hunt4food.andrewcamero.com (lodge-gated; sign in at https://andrewcamero.com)
 
 ## What it does
 
@@ -17,7 +17,7 @@ Access is through the andrewcamero.com lodge (session cookie `ac_session` plus a
 ### Google ratings setup (one-time)
 
 1. **Enable Places API (New)** on your Google Cloud project
-2. Restrict the key to HTTP referrer `https://Hunt4Food.andrewcamero.com/*`
+2. Restrict the key to HTTP referrer `https://hunt4food.andrewcamero.com/*`
 3. Add **`VITE_GOOGLE_PLACES_API_KEY`** on Vercel (and never prefix lodge secrets with `VITE_`)
 4. The app caps Google rating lookups at **40/day** and **400/month** automatically
 
@@ -35,12 +35,12 @@ Access is through the andrewcamero.com lodge (session cookie `ac_session` plus a
 
 ## Lodge
 
-Hunt4Food is a product behind the andrewcamero.com lodge. It does **not** host login, signup, or its own user database. JWT verification runs only on the server (`server/`, Vercel `middleware.ts`); `AUTH_SECRET` must never be prefixed with `VITE_`.
+Hunt4Food is a product behind the andrewcamero.com lodge. It does **not** host login, signup, or its own user database. JWT verification runs only on the server (`server/`, Vercel `middleware.ts`); `AUTH_SECRET` must never be prefixed with `VITE_` or `NEXT_PUBLIC_`.
 
 | | |
 | --- | --- |
-| Origin | https://Hunt4Food.andrewcamero.com |
-| Login | https://andrewcamero.com/login?next=https://Hunt4Food.andrewcamero.com |
+| Origin | https://hunt4food.andrewcamero.com |
+| Login | https://andrewcamero.com/login?next=https://hunt4food.andrewcamero.com |
 | Missing grant | https://andrewcamero.com/?need=Hunt4Food |
 | Cookie | `ac_session` (HS256 JWT, production domain `.andrewcamero.com`) |
 
@@ -55,7 +55,9 @@ LODGE_ORIGIN=https://andrewcamero.com
 APP_SLUG=Hunt4Food
 ```
 
-Local lodge (typical lodge on port 3000):
+### Run against a local lodge
+
+Typical lodge on port 3000:
 
 ```
 AUTH_SECRET=<same value as the local lodge>
@@ -71,12 +73,12 @@ npm install
 npm run dev
 ```
 
-Visiting this app without `ac_session` redirects to the lodge login. A signed-in **member** without a Hunt4Food grant is redirected to `/?need=Hunt4Food`. **Admin** (`role=admin`, Andrew Camero) is allowed without a grant row. Members start with zero grants; hiding the catalog card is not enough.
+Visiting this app without `ac_session` redirects to the lodge login. A signed-in **member** without a Hunt4Food grant is redirected to `/?need=Hunt4Food`. **Admin** (`admin: true` or `role=admin`, Andrew Camero) is allowed without a grant row. Members start with zero grants; hiding the catalog card is not enough.
 
 Andrew must:
 
-1. Add a Hunt4Food row to lodge `apps.ts` (slug `Hunt4Food`, origin https://Hunt4Food.andrewcamero.com, repo `DaKuY/restaurant-finder`, status `soon` until deployed then `live`, `health: false`).
-2. Grant `Hunt4Food` on **Admin → People** for each member who should use the app.
+1. Confirm lodge `src/lib/apps.ts` already has `Hunt4Food` (origin `https://hunt4food.andrewcamero.com`, repo `DaKuY/restaurant-finder`). Do not add a second row.
+2. Grant `Hunt4Food` on **Admin desk** for each member who should use the app, then flip `live: true` in `apps.ts` after this origin is on Vercel + DNS.
 
 ```bash
 npm test
