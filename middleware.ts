@@ -2,7 +2,7 @@ import { next } from '@vercel/functions'
 import { handleLodgeGate, lodgeEnvFrom } from './server/gate.ts'
 
 export const config = {
-  runtime: 'nodejs' as const,
+  runtime: 'nodejs',
   // Hashed static assets have no user data. Gate HTML + APIs in handleLodgeGate.
   matcher: ['/((?!assets/|src/|node_modules/|\\.well-known/|@|favicon\\.svg|hunt4food-logo\\.svg).*)'],
 }
