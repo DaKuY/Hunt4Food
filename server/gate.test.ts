@@ -1,7 +1,7 @@
 import { SignJWT } from 'jose'
 import { describe, expect, it } from 'vitest'
 import { lodgeEnvFrom, loginUrl, needUrl } from './env.ts'
-import { handleLodgeGate } from './gate.ts'
+import { handleLodgeGate, isUngatedPath } from './gate.ts'
 import {
   authorizeRequest,
   fetchLodgeSession,
@@ -308,6 +308,30 @@ describe('lodge auth gate', () => {
       fetchLodge: async () => 'unavailable',
     })
     expect(decision.type).toBe('login')
+  })
+})
+
+describe('isUngatedPath', () => {
+  it('keeps HTML and APIs gated', () => {
+    expect(isUngatedPath('/')).toBe(false)
+    expect(isUngatedPath('/index.html')).toBe(false)
+    expect(isUngatedPath('/api/session')).toBe(false)
+  })
+
+  it('skips hashed assets, favicons, and Vite internals', () => {
+    expect(isUngatedPath('/assets/index-abc123.js')).toBe(true)
+    expect(isUngatedPath('/favicon.svg')).toBe(true)
+    expect(isUngatedPath('/hunt4food-logo.svg')).toBe(true)
+    expect(isUngatedPath('/.well-known/vercel')).toBe(true)
+    expect(isUngatedPath('/src/main.tsx')).toBe(true)
+  })
+
+  it('does not authorize static assets (no cookie still served)', async () => {
+    const res = await handleLodgeGate(
+      new Request(`${ORIGIN}/assets/index-abc.js`, { headers: { accept: '*/*' } }),
+      env,
+    )
+    expect(res).toBeNull()
   })
 })
 
