@@ -37,12 +37,18 @@ Access is through the andrewcamero.com lodge (session cookie `ac_session` plus a
 
 Hunt4Food is a product behind the andrewcamero.com lodge. It does **not** host login, signup, or its own user database. JWT verification runs only on the server (`server/`, Vercel `middleware.ts`); `AUTH_SECRET` must never be prefixed with `VITE_` or `NEXT_PUBLIC_`.
 
+`ORIGIN=https://hunt4food.andrewcamero.com`
+
 | | |
 | --- | --- |
 | Origin | https://hunt4food.andrewcamero.com |
 | Login | https://andrewcamero.com/login?next=https://hunt4food.andrewcamero.com |
 | Missing grant | https://andrewcamero.com/?need=Hunt4Food |
 | Cookie | `ac_session` (HS256 JWT, production domain `.andrewcamero.com`) |
+| Catalog slug | `Hunt4Food` (not `food`) |
+| Vercel | **this** Vite project only — not the lodge project |
+
+Lodge catalog already has `Hunt4Food` (`origin` `https://hunt4food.andrewcamero.com`, repo `DaKuY/restaurant-finder`, `live: true`). Do not add a second `apps.ts` row and do not flip lodge live flags.
 
 ### Required env
 
@@ -54,6 +60,8 @@ COOKIE_DOMAIN=.andrewcamero.com
 LODGE_ORIGIN=https://andrewcamero.com
 APP_SLUG=Hunt4Food
 ```
+
+Production Vercel env is the same four names (server-only).
 
 ### Run against a local lodge
 
@@ -75,10 +83,7 @@ npm run dev
 
 Visiting this app without `ac_session` redirects to the lodge login. A signed-in **member** without a Hunt4Food grant is redirected to `/?need=Hunt4Food`. **Admin** (`admin: true` or `role=admin`, Andrew Camero) is allowed without a grant row. Members start with zero grants; hiding the catalog card is not enough.
 
-Andrew must:
-
-1. Confirm lodge `src/lib/apps.ts` already has `Hunt4Food` (origin `https://hunt4food.andrewcamero.com`, repo `DaKuY/restaurant-finder`). Do not add a second row.
-2. Grant `Hunt4Food` on **Admin desk** for each member who should use the app, then flip `live: true` in `apps.ts` after this origin is on Vercel + DNS.
+Grant `Hunt4Food` on the lodge **Admin desk** for each member who should use the app.
 
 ```bash
 npm test

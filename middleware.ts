@@ -1,13 +1,14 @@
 import { next } from '@vercel/functions'
-import { handleLodgeGate, lodgeEnvFrom } from './server/gate.ts'
+import { handleLodgeGate } from './server/gate.js'
 
 export const config = {
-  runtime: 'nodejs' as const,
+  runtime: 'nodejs',
+  // Hashed static assets have no user data. Gate HTML + APIs in handleLodgeGate.
+  matcher: ['/((?!assets/|src/|node_modules/|\\.well-known/|@|favicon\\.svg|hunt4food-logo\\.svg).*)'],
 }
 
 export default async function middleware(request: Request) {
-  const env = lodgeEnvFrom(process.env)
-  const blocked = await handleLodgeGate(request, env)
+  const blocked = await handleLodgeGate(request)
   if (blocked) return blocked
   return next()
 }
