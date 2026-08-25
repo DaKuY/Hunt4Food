@@ -31,7 +31,7 @@ function isRole(value: unknown): value is Role {
   return value === 'admin' || value === 'member'
 }
 
-/** Admin bypasses grants. Members need APP_SLUG on apps[] (case-insensitive). */
+/** Lodge catalog grant helper. Hunt4Food access is login-only; grants are not required. */
 export function hasAppGrant(
   session: { admin?: boolean; role?: string; apps?: unknown } | null | undefined,
   slug: string,

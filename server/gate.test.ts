@@ -1,6 +1,6 @@
 import { SignJWT } from 'jose'
 import { describe, expect, it } from 'vitest'
-import { lodgeEnvFrom, loginUrl, needUrl } from './env.js'
+import { lodgeEnvFrom, loginUrl } from './env.js'
 import { handleLodgeGate, isUngatedPath } from './gate.js'
 import {
   authorizeRequest,
@@ -110,30 +110,29 @@ describe('lodge auth gate', () => {
     expect(api!.status).toBe(401)
   })
 
-  it('denies a member without Hunt4Food', async () => {
-    const token = await sign(claims({ apps: ['hunt'] }))
-    const decision = await authorizeRequest(cookieHeader(token), SECRET, LODGE, SLUG, {
+  it('allows a logged-in member without a Hunt4Food grant', async () => {
+    const session = claims({ apps: [] })
+    const token = await sign(session)
+    const decision = await authorizeRequest(cookieHeader(token), SECRET, LODGE, {
       fetchLodge: async () => 'unavailable',
     })
-    expect(decision.type).toBe('need')
+    expect(decision).toEqual({ type: 'allow', session })
 
     const html = await handleLodgeGate(htmlRequest(cookieHeader(token)), env, {
       fetchLodge: async () => 'unavailable',
     })
-    expect(html!.status).toBe(302)
-    expect(html!.headers.get('location')).toBe(needUrl(LODGE, SLUG))
-    expect(html!.headers.get('location')).toBe('https://andrewcamero.com/?need=Hunt4Food')
+    expect(html).toBeNull()
 
     const api = await handleLodgeGate(apiRequest(cookieHeader(token)), env, {
       fetchLodge: async () => 'unavailable',
     })
-    expect(api!.status).toBe(403)
+    expect(api).toBeNull()
   })
 
   it('allows a member with Hunt4Food', async () => {
     const session = claims({ apps: [SLUG] })
     const token = await sign(session)
-    const decision = await authorizeRequest(cookieHeader(token), SECRET, LODGE, SLUG, {
+    const decision = await authorizeRequest(cookieHeader(token), SECRET, LODGE, {
       fetchLodge: async () => 'unavailable',
     })
     expect(decision).toEqual({ type: 'allow', session })
@@ -146,7 +145,7 @@ describe('lodge auth gate', () => {
 
   it('allows a member whose grant is hunt4food (case-insensitive)', async () => {
     const token = await sign(claims({ apps: ['hunt4food'] }))
-    const decision = await authorizeRequest(cookieHeader(token), SECRET, LODGE, SLUG, {
+    const decision = await authorizeRequest(cookieHeader(token), SECRET, LODGE, {
       fetchLodge: async () => 'unavailable',
     })
     expect(decision.type).toBe('allow')
@@ -163,7 +162,7 @@ describe('lodge auth gate', () => {
       apps: [],
     })
     const token = await sign(session)
-    const decision = await authorizeRequest(cookieHeader(token), SECRET, LODGE, SLUG, {
+    const decision = await authorizeRequest(cookieHeader(token), SECRET, LODGE, {
       fetchLodge: async () => 'unavailable',
     })
     expect(decision.type).toBe('allow')
@@ -186,7 +185,7 @@ describe('lodge auth gate', () => {
       apps: [],
       tokenVersion: 3,
     }
-    const decision = await authorizeRequest(cookieHeader(token), SECRET, LODGE, SLUG, {
+    const decision = await authorizeRequest(cookieHeader(token), SECRET, LODGE, {
       fetchLodge: async () => live,
     })
     expect(decision.type).toBe('allow')
@@ -201,7 +200,7 @@ describe('lodge auth gate', () => {
       apps: [SLUG],
       tv: 1,
     })
-    const decision = await authorizeRequest(cookieHeader(token), SECRET, LODGE, SLUG, {
+    const decision = await authorizeRequest(cookieHeader(token), SECRET, LODGE, {
       fetchLodge: async () => 'unavailable',
     })
     expect(decision.type).toBe('allow')
@@ -212,20 +211,23 @@ describe('lodge auth gate', () => {
     }
   })
 
-  it('prefers live lodge grants over a stale JWT apps list', async () => {
-    const stale = claims({ apps: [SLUG] })
+  it('prefers the live lodge user over a stale JWT', async () => {
+    const stale = claims({ apps: [SLUG], tokenVersion: 1 })
     const token = await sign(stale)
-    const live: LodgeLookup = claims({ apps: [] })
-    const decision = await authorizeRequest(cookieHeader(token), SECRET, LODGE, SLUG, {
+    const live: LodgeLookup = claims({ apps: [], tokenVersion: 9 })
+    const decision = await authorizeRequest(cookieHeader(token), SECRET, LODGE, {
       fetchLodge: async () => live,
     })
-    expect(decision.type).toBe('need')
+    expect(decision.type).toBe('allow')
+    if (decision.type === 'allow') {
+      expect(decision.session.tokenVersion).toBe(9)
+    }
   })
 
-  it('uses a lodge grant refresh when the JWT apps list is empty', async () => {
+  it('allows a live lodge session when the JWT apps list is empty', async () => {
     const token = await sign(claims({ apps: [] }))
     const live = claims({ apps: [SLUG] })
-    const decision = await authorizeRequest(cookieHeader(token), SECRET, LODGE, SLUG, {
+    const decision = await authorizeRequest(cookieHeader(token), SECRET, LODGE, {
       fetchLodge: async () => live,
     })
     expect(decision.type).toBe('allow')
@@ -233,7 +235,7 @@ describe('lodge auth gate', () => {
 
   it('treats a lodge 401 as logged out even if the JWT still verifies', async () => {
     const token = await sign(claims({ apps: [SLUG], role: 'admin' }))
-    const decision = await authorizeRequest(cookieHeader(token), SECRET, LODGE, SLUG, {
+    const decision = await authorizeRequest(cookieHeader(token), SECRET, LODGE, {
       fetchLodge: async () => 'unauthorized',
     })
     expect(decision.type).toBe('login')
@@ -242,7 +244,7 @@ describe('lodge auth gate', () => {
   it('treats lodge { user: null } as logged out rather than falling back to JWT', async () => {
     expect(sessionFromUnknown({ user: null })).toBeNull()
     const token = await sign(claims({ apps: [SLUG] }))
-    const decision = await authorizeRequest(cookieHeader(token), SECRET, LODGE, SLUG, {
+    const decision = await authorizeRequest(cookieHeader(token), SECRET, LODGE, {
       fetchLodge: async () => 'unauthorized',
     })
     expect(decision.type).toBe('login')
@@ -304,7 +306,7 @@ describe('lodge auth gate', () => {
 
   it('rejects a cookie signed with the wrong secret', async () => {
     const token = await sign(claims({ apps: [SLUG] }), 'some-other-secret')
-    const decision = await authorizeRequest(cookieHeader(token), SECRET, LODGE, SLUG, {
+    const decision = await authorizeRequest(cookieHeader(token), SECRET, LODGE, {
       fetchLodge: async () => 'unavailable',
     })
     expect(decision.type).toBe('login')
@@ -336,7 +338,7 @@ describe('isUngatedPath', () => {
 })
 
 describe('hasAppGrant / parseSessionPayload', () => {
-  it('does not treat hiding a catalog card as access — empty apps denies members', () => {
+  it('keeps the lodge catalog helper: empty apps denies members', () => {
     expect(hasAppGrant({ admin: false, role: 'member', apps: [] }, SLUG)).toBe(false)
   })
 
