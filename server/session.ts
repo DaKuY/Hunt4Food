@@ -3,7 +3,6 @@ import {
   parseSessionPayload,
   readCookie,
   SESSION_COOKIE,
-  verifySessionToken,
   type SessionPayload,
 } from './token.js'
 
@@ -46,6 +45,7 @@ export async function fetchLodgeSession(
       },
       redirect: 'manual',
       signal: AbortSignal.timeout(2500),
+      cache: 'no-store',
     })
     if (res.status === 401 || res.status === 403) return 'unauthorized'
     if (!res.ok) return 'unavailable'
@@ -66,28 +66,18 @@ export async function fetchLodgeSession(
 
 export async function authorizeRequest(
   cookieHeader: string | null | undefined,
-  authSecret: string,
   lodgeOrigin: string,
   deps: AuthorizeDeps = {},
 ): Promise<GateDecision> {
   const token = readCookie(cookieHeader, SESSION_COOKIE)
   if (!token) return { type: 'login' }
 
-  const jwtSession = await verifySessionToken(token, authSecret)
   const lodge = await (deps.fetchLodge ?? ((t) => fetchLodgeSession(lodgeOrigin, t)))(token)
-
-  let session: SessionPayload | null = null
-  if (lodge !== 'unauthorized' && lodge !== 'unavailable') {
-    // Prefer the live lodge user over a stale JWT.
-    session = lodge
-  } else if (lodge === 'unavailable') {
-    session = jwtSession
-  } else {
+  if (lodge === 'unauthorized' || lodge === 'unavailable') {
+    // Fail closed: no stale/local JWT fallback.
     return { type: 'login' }
   }
-
-  if (!session) return { type: 'login' }
-  return { type: 'allow', session }
+  return { type: 'allow', session: lodge }
 }
 
 export function requestWantsJson(request: Request): boolean {
