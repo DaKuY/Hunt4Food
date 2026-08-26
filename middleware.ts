@@ -3,8 +3,8 @@ import { handleLodgeGate } from './server/gate.js'
 
 export const config = {
   runtime: 'nodejs',
-  // Hashed static assets have no user data. Gate HTML + APIs in handleLodgeGate.
-  matcher: ['/((?!assets/|src/|node_modules/|\\.well-known/|@|favicon\\.svg|hunt4food-logo\\.svg).*)'],
+  // Only immutable production assets bypass auth. Source/dev paths stay gated.
+  matcher: ['/((?!assets/|favicon\\.svg|hunt4food-logo\\.svg).*)'],
 }
 
 export default async function middleware(request: Request) {
