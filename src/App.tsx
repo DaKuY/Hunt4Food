@@ -725,9 +725,19 @@ function Shell() {
     <div className="app-shell">
       <div className="atmosphere" aria-hidden />
       <header className="topbar">
-        <button type="button" className="top-brand" onClick={goHome} aria-label={brandAriaLabel()}>
-          <BrandMark />
-        </button>
+        <div className="topbar-brands">
+          <a href="https://andrewcamero.com/" className="base-camp-home" aria-label="Base Camp home">
+            <img
+              src="/logos/7D1A58C5-AFB4-4707-9696-BC085F5048A5.png"
+              alt=""
+              draggable={false}
+              decoding="async"
+            />
+          </a>
+          <button type="button" className="top-brand" onClick={goHome} aria-label={brandAriaLabel()}>
+            <BrandMark />
+          </button>
+        </div>
         <nav>
           {searchNav?.showNewCity && (
             <button type="button" className="topbar-link" onClick={searchNav.onNewCity}>

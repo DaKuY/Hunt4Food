@@ -324,6 +324,7 @@ describe('isUngatedPath', () => {
     expect(isUngatedPath('/assets/index-abc123.js')).toBe(true)
     expect(isUngatedPath('/favicon.svg')).toBe(true)
     expect(isUngatedPath('/hunt4food-logo.svg')).toBe(true)
+    expect(isUngatedPath('/logos/7D1A58C5-AFB4-4707-9696-BC085F5048A5.png')).toBe(true)
     expect(isUngatedPath('/.well-known/vercel')).toBe(true)
     expect(isUngatedPath('/src/main.tsx')).toBe(true)
   })
