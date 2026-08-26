@@ -16,21 +16,12 @@ const PUBLIC_FILES = new Set([
   '/robots.txt',
 ])
 
-/** Static / Vite internals: no user data. HTML, `/`, and `/api/*` stay gated. */
+/** Only immutable production assets and explicitly public files bypass auth. */
 export function isUngatedPath(pathname: string): boolean {
   const path = pathname.split('?')[0] || '/'
   if (PUBLIC_FILES.has(path)) return true
-  if (
-    path.startsWith('/assets/') ||
-    path.startsWith('/.well-known/') ||
-    path.startsWith('/.vite/') ||
-    path.startsWith('/@') ||
-    path.startsWith('/node_modules/') ||
-    path.startsWith('/src/')
-  ) {
-    return true
-  }
-  return /\.(?:css|js|mjs|cjs|map|woff2?|ttf|eot|png|jpe?g|gif|svg|ico|webp)$/i.test(path)
+  if (path.startsWith('/assets/')) return true
+  return /\.(?:css|js|mjs|woff2?|ttf|eot|png|jpe?g|gif|svg|ico|webp)$/i.test(path) && path.startsWith('/assets/')
 }
 
 export async function handleLodgeGate(
@@ -42,7 +33,6 @@ export async function handleLodgeGate(
   if (isUngatedPath(pathname)) return null
   const decision = await authorizeRequest(
     request.headers.get('cookie'),
-    env.AUTH_SECRET,
     env.LODGE_ORIGIN,
     deps,
   )
