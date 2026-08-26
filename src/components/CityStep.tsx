@@ -18,6 +18,7 @@ L.Icon.Default.mergeOptions({
 
 type Props = {
   onConfirm: (city: CitySelection) => void
+  onBack: () => void
   initial?: CitySelection | null
 }
 
@@ -43,7 +44,7 @@ function BoundsWatcher({ onBounds }: { onBounds: (b: MapBounds, center: { lat: n
   return null
 }
 
-export function CityStep({ onConfirm, initial }: Props) {
+export function CityStep({ onConfirm, onBack, initial }: Props) {
   const lastRecent = initial ? null : loadRecentCities()[0]
   const [query, setQuery] = useState(initial?.label ?? lastRecent?.label ?? '')
   const [hits, setHits] = useState<GeocodeHit[]>([])
@@ -284,6 +285,9 @@ export function CityStep({ onConfirm, initial }: Props) {
       </div>
 
       <div className="step-actions row">
+        <button type="button" className="btn ghost" onClick={onBack}>
+          Back
+        </button>
         <button type="button" className="btn primary" onClick={() => void confirmMapArea()}>
           Use this location
         </button>

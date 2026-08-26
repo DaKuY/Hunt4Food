@@ -39,6 +39,7 @@ import { ResultsStep } from './components/ResultsStep'
 import { SettingsPage } from './components/SettingsPage'
 import { TastePage } from './components/TastePage'
 import { BrandMark, brandAriaLabel } from './components/BrandMark'
+import { leaveToLodge, LODGE_HOME } from './lib/lodgeHome'
 import './App.css'
 
 const CityStep = lazy(() =>
@@ -59,6 +60,18 @@ function useSearchNav() {
   const ctx = useContext(SearchNavContext)
   if (!ctx) throw new Error('useSearchNav must be used within SearchNavContext')
   return ctx
+}
+
+/** First Hunt4Food screen: browser Back must leave for the lodge, not remount this SPA. */
+function useLeaveToLodgeOnBrowserBack(enabled: boolean) {
+  useEffect(() => {
+    if (!enabled) return
+    const onPopState = () => {
+      leaveToLodge()
+    }
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [enabled])
 }
 
 function cityFromParams(params: URLSearchParams): CitySelection | null {
@@ -134,6 +147,7 @@ function SearchFlow() {
   const [shareMessage, setShareMessage] = useState<string | null>(null)
   const [healthyStatus, setHealthyStatus] = useState<string | null>(null)
   const [scrollToResultsKey, setScrollToResultsKey] = useState(0)
+  const [cityPickedByUser, setCityPickedByUser] = useState(false)
   const searchAbortRef = useRef<AbortController | null>(null)
   const prefetchPromiseRef = useRef<Promise<Restaurant[]> | null>(null)
   const poolRef = useRef<Restaurant[]>([])
@@ -392,7 +406,7 @@ function SearchFlow() {
     void runSearch(restored, initialCuisines, dietary, keyword)
   }, [restored, initialCuisines, dietary, keyword, runSearch, params])
 
-  function confirmCity(selection: CitySelection) {
+  function confirmCity(selection: CitySelection, pickedByUser = false) {
     window.scrollTo({ top: 0, behavior: 'smooth' })
     pushRecentCity({
       label: selection.label,
@@ -400,6 +414,7 @@ function SearchFlow() {
       lon: selection.center.lon,
       ...selection.bounds,
     })
+    if (pickedByUser) setCityPickedByUser(true)
     setCity(selection)
     setStep('cuisine')
     setResolvingLocation(false)
@@ -416,7 +431,7 @@ function SearchFlow() {
       next.set('north', String(selection.bounds.north))
       next.set('east', String(selection.bounds.east))
       return next
-    })
+    }, { replace: true })
   }
 
   useEffect(() => {
@@ -432,7 +447,7 @@ function SearchFlow() {
       next.set('north', String(initialRecent.north))
       next.set('east', String(initialRecent.east))
       return next
-    })
+    }, { replace: true })
   }, [initialRecent, restored, setParams])
 
   useEffect(() => {
@@ -472,7 +487,7 @@ function SearchFlow() {
       if (trimmed) next.set('keyword', trimmed)
       else next.delete('keyword')
       return next
-    })
+    }, { replace: true })
     void runSearch(city, cuisines, dietary, keyword)
   }
 
@@ -498,7 +513,8 @@ function SearchFlow() {
     prefetchPromiseRef.current = null
     autoRanRef.current = false
     seedOilBoostRef.current = false
-    setParams(new URLSearchParams())
+    setCityPickedByUser(false)
+    setParams(new URLSearchParams(), { replace: true })
   }, [setParams])
 
   useEffect(() => {
@@ -525,6 +541,16 @@ function SearchFlow() {
 
   const lovedIds = useMemo(() => new Set(taste.loved.map((l) => l.id)), [taste.loved])
   const shortlistedIds = useMemo(() => new Set(shortlist.map((s) => s.id)), [shortlist])
+  const firstHunt4FoodScreen = step === 'city' || (step === 'cuisine' && !cityPickedByUser)
+  useLeaveToLodgeOnBrowserBack(firstHunt4FoodScreen)
+
+  function backFromCuisine() {
+    if (cityPickedByUser) {
+      setStep('city')
+      return
+    }
+    leaveToLodge()
+  }
 
   return (
     <>
@@ -532,10 +558,15 @@ function SearchFlow() {
         resolvingLocation ? (
           <section className="step">
             <p className="muted">Finding your location…</p>
+            <div className="step-actions row">
+              <a href={LODGE_HOME} className="btn ghost" onClick={leaveToLodge}>
+                Back
+              </a>
+            </div>
           </section>
         ) : (
           <Suspense fallback={<p className="muted">Loading map…</p>}>
-            <CityStep onConfirm={confirmCity} initial={city} />
+            <CityStep onConfirm={(selection) => confirmCity(selection, true)} onBack={leaveToLodge} initial={city} />
           </Suspense>
         )
       )}
@@ -546,7 +577,7 @@ function SearchFlow() {
           keyword={keyword}
           onChange={setCuisines}
           onKeywordChange={setKeyword}
-          onBack={() => setStep('city')}
+          onBack={backFromCuisine}
           onNext={startFind}
         />
       )}
@@ -725,9 +756,24 @@ function Shell() {
     <div className="app-shell">
       <div className="atmosphere" aria-hidden />
       <header className="topbar">
-        <button type="button" className="top-brand" onClick={goHome} aria-label={brandAriaLabel()}>
-          <BrandMark />
-        </button>
+        <div className="topbar-brands">
+          <a
+            href={LODGE_HOME}
+            className="base-camp-home"
+            aria-label="Base Camp home"
+            onClick={leaveToLodge}
+          >
+            <img
+              src="/logos/7D1A58C5-AFB4-4707-9696-BC085F5048A5.png"
+              alt=""
+              draggable={false}
+              decoding="async"
+            />
+          </a>
+          <button type="button" className="top-brand" onClick={goHome} aria-label={brandAriaLabel()}>
+            <BrandMark />
+          </button>
+        </div>
         <nav>
           {searchNav?.showNewCity && (
             <button type="button" className="topbar-link" onClick={searchNav.onNewCity}>
