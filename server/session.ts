@@ -66,6 +66,7 @@ export async function fetchLodgeSession(
 
 export async function authorizeRequest(
   cookieHeader: string | null | undefined,
+  _authSecret: string,
   lodgeOrigin: string,
   deps: AuthorizeDeps = {},
 ): Promise<GateDecision> {
