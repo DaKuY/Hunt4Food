@@ -11,19 +11,39 @@
     />
     <title>Hunt4Food · Restaurant Finder</title>
     <style>
-      .topbar .base-camp-home { display: none !important; }
-      .base-camp-footer-home {
-        display: flex;
-        justify-content: flex-end;
-        align-items: center;
-        width: min(1100px, calc(100% - 32px));
-        margin: 0 auto;
-        padding: 10px 0 max(20px, env(safe-area-inset-bottom));
+      .topbar .base-camp-home {
+        display: none !important;
       }
+
+      .base-camp-footer-home {
+        position: fixed;
+        right: max(1rem, env(safe-area-inset-right));
+        bottom: max(1rem, env(safe-area-inset-bottom));
+        z-index: 100;
+        display: inline-flex;
+        align-items: center;
+        width: auto;
+        margin: 0;
+        padding: 0.5rem;
+        border: 1px solid rgba(28, 25, 23, 0.12);
+        border-radius: 1rem;
+        background: rgba(250, 248, 244, 0.94);
+        box-shadow: 0 8px 24px rgba(28, 25, 23, 0.14);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        line-height: 0;
+      }
+
+      .base-camp-footer-home:focus-visible {
+        outline: 2px solid #9a7b52;
+        outline-offset: 3px;
+      }
+
       .base-camp-footer-home img {
         display: block;
-        width: min(180px, 46vw);
-        height: auto;
+        width: auto;
+        height: 2.5rem;
+        max-width: min(160px, 42vw);
         object-fit: contain;
       }
     </style>
