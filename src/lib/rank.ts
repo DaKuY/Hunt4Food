@@ -24,6 +24,71 @@ const GRASS_FED_KEYWORDS = [
   'dry-aged',
 ]
 
+const FAST_FOOD_CATEGORY_VALUES = new Set([
+  'fast_food',
+  'fastfood',
+  'fast_food_restaurant',
+  'quick_service_restaurant',
+])
+
+const FAST_FOOD_CHAIN_ALIASES = [
+  'mcdonalds',
+  'mcdonald s',
+  'burger king',
+  'wendys',
+  'wendy s',
+  'whataburger',
+  'sonic drive in',
+  'sonic drive-in',
+  'jack in the box',
+  'taco bell',
+  'kfc',
+  'kentucky fried chicken',
+  'popeyes',
+  'raising canes',
+  'raising cane s',
+  'chick fil a',
+  'chick-fil-a',
+  'arbys',
+  'arby s',
+  'dairy queen',
+  'in n out',
+  'in-n-out',
+  'five guys',
+  'panda express',
+  'wingstop',
+  'little caesars',
+  'dominos',
+  'domino s',
+  'pizza hut',
+  'papa johns',
+  'papa john s',
+  'subway',
+  'jimmy johns',
+  'jimmy john s',
+  'jersey mikes',
+  'jersey mike s',
+  'firehouse subs',
+  'churchs chicken',
+  'church s chicken',
+  'bojangles',
+  'zaxbys',
+  'zaxby s',
+  'culvers',
+  'culver s',
+  'checkers',
+  'rallys',
+  'rally s',
+  'white castle',
+  'del taco',
+  'long john silvers',
+  'long john silver s',
+  'captain ds',
+  'captain d s',
+  'a&w',
+  'a and w',
+]
+
 function haversineKm(a: LatLng, b: LatLng): number {
   const R = 6371
   const dLat = ((b.lat - a.lat) * Math.PI) / 180
@@ -90,11 +155,41 @@ function isYes(v?: string): boolean {
   return s === 'yes' || s === 'only' || s === 'limited'
 }
 
+function normalizeRestaurantName(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function normalizedCategory(value: string): string {
+  return value.toLowerCase().trim().replace(/[\s-]+/g, '_')
+}
+
+function chainNameMatches(name: string, alias: string): boolean {
+  const normalizedAlias = normalizeRestaurantName(alias)
+  if (!normalizedAlias) return false
+  return (
+    name === normalizedAlias ||
+    name.startsWith(`${normalizedAlias} `) ||
+    name.endsWith(` ${normalizedAlias}`) ||
+    name.includes(` ${normalizedAlias} `)
+  )
+}
+
 export function isFastFood(place: Restaurant): boolean {
-  if (place.amenity === 'fast_food') return true
-  if (place.cuisines.includes('fast_food')) return true
-  const raw = (place.cuisineRaw ?? '').toLowerCase()
-  return raw.split(/[;,]/).some((c) => c.trim() === 'fast_food')
+  if (normalizedCategory(place.amenity ?? '') === 'fast_food') return true
+
+  const categories = [
+    ...place.cuisines,
+    ...(place.cuisineRaw ?? '').split(/[;,]/),
+  ].map(normalizedCategory)
+  if (categories.some((category) => FAST_FOOD_CATEGORY_VALUES.has(category))) return true
+
+  const name = normalizeRestaurantName(place.name)
+  return FAST_FOOD_CHAIN_ALIASES.some((alias) => chainNameMatches(name, alias))
 }
 
 function tasteBoost(place: Restaurant, taste: TasteProfile): { points: number; reasons: string[] } {
@@ -171,7 +266,10 @@ export function rankRestaurants(
   const limit = opts.limit ?? 10
   const exclude = opts.excludeIds ? new Set(opts.excludeIds) : null
   let pool = exclude ? places.filter((p) => !exclude.has(p.id)) : places
-  if (opts.excludeFastFood) pool = pool.filter((p) => !isFastFood(p))
+
+  // Hunt4Food never recommends fast food. Keep excludeFastFood in the options type
+  // for backwards compatibility with existing callers, but the exclusion is global.
+  pool = pool.filter((p) => !isFastFood(p))
 
   const keywordOnly = opts.selectedCuisines.length === 0 && Boolean(opts.keyword?.trim())
   if (keywordOnly) {
