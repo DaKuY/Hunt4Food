@@ -7,7 +7,11 @@ import {
   assignHealthyLane,
   evidenceLine,
   extractHealthySignals,
+  hasPrimaryHealthyEvidence,
   healthyInstantBoost,
+  healthyQualityTier,
+  healthySignalScore,
+  isQualityWholeFoodFallback,
   mergeSignals,
 } from './healthySignals'
 import type {
@@ -61,12 +65,6 @@ export type HealthySearchProgress = {
   places?: RankedRestaurant[]
 }
 
-const LANE_CAPS: Record<HealthyLane, number> = {
-  clean_cooking: 4,
-  smoothie: 3,
-  protein: 3,
-}
-
 const SEARCH_BUDGET_MS = 25_000
 const DISCOVER_TIMEOUT_MS = 20_000
 const REVIEWS_TIMEOUT_MS = 20_000
@@ -87,7 +85,7 @@ function cacheKey(city: CitySelection): string {
   const b = [city.bounds.south, city.bounds.west, city.bounds.north, city.bounds.east]
     .map((n) => n.toFixed(3))
     .join(',')
-  return `healthySearch:v1:${utcDayKey()}:${b}`
+  return `healthySearch:v2:${utcDayKey()}:${b}`
 }
 
 function normalizeName(s: string): string {
@@ -156,10 +154,8 @@ function applySnippets(
       const text = `${s.text ?? ''} ${s.url ?? ''}`.toLowerCase()
       return text.includes(name.slice(0, Math.min(name.length, 12))) || text.includes(normalizeName(place.name).slice(0, 8))
     })
-    if (!hits.length) {
-      // still mine unmatched snippets for global signals later — attach if keywords + city-level only
-      return place
-    }
+    if (!hits.length) return place
+
     let signals = place.signals ?? []
     for (const snip of hits) {
       const source =
@@ -184,10 +180,27 @@ function scoreHealthyPlace(
 ): RankedRestaurant {
   const boost = healthyInstantBoost(place)
   const signals = mergeSignals(place.signals ?? [], boost.signals)
-  let score = place.score + boost.points + signals.length * 4
+  const identityBoost = Math.max(0, boost.points - healthySignalScore(boost.signals))
+  const baseScore = place.baseScore ?? place.score
+  let score = baseScore + healthySignalScore(signals) + identityBoost
   const reasons = [...place.reasons, ...boost.reasons]
+
+  if (hasPrimaryHealthyEvidence(signals)) {
+    score += 10
+    reasons.unshift(
+      `Prioritized for clean-food evidence: ${signals
+        .filter((signal) => ['grass_fed', 'pasture_raised', 'no_seed_oils', 'avocado_oil', 'organic', 'wild_caught', 'locally_sourced'].includes(signal.id))
+        .map((signal) => signal.label.toLowerCase())
+        .slice(0, 3)
+        .join(', ')}`,
+    )
+  } else if (isQualityWholeFoodFallback(place, signals)) {
+    score += 6
+    reasons.unshift('Quality whole-food fallback when stronger clean-food evidence is limited')
+  }
+
   if (opts.selectedCuisines.includes('salmon') && signals.some((s) => s.id === 'salmon')) {
-    score += 8
+    score += 12
     reasons.push('Matches your Salmon pick')
   }
   if (opts.selectedCuisines.includes('smoothie') && (boost.lane === 'smoothie' || signals.some((s) => s.id === 'smoothie'))) {
@@ -198,10 +211,12 @@ function scoreHealthyPlace(
     const kw = opts.keyword.trim().toLowerCase()
     if (`${place.name} ${place.cuisines.join(' ')}`.toLowerCase().includes(kw)) score += 10
   }
+
   const lane = place.lane ?? assignHealthyLane(place, signals, boost.lane)
   const uniq = Array.from(new Set(reasons)).slice(0, 4)
   return {
     ...place,
+    baseScore,
     score,
     reasons: uniq.length ? uniq : ['Healthy match for this area'],
     lane,
@@ -216,30 +231,14 @@ export function pickHealthyLanes(
   excludeIds?: Iterable<string>,
 ): RankedRestaurant[] {
   const exclude = excludeIds ? new Set(excludeIds) : new Set<string>()
-  const pool = ranked.filter((p) => !exclude.has(p.id)).sort((a, b) => b.score - a.score)
-  const chosen: RankedRestaurant[] = []
-  const used = new Set<string>()
-
-  const take = (lane: HealthyLane, cap: number) => {
-    for (const p of pool) {
-      if (chosen.length >= limit) return
-      if (used.has(p.id) || p.lane !== lane) continue
-      chosen.push(p)
-      used.add(p.id)
-      if (chosen.filter((c) => c.lane === lane).length >= cap) return
-    }
-  }
-
-  take('clean_cooking', LANE_CAPS.clean_cooking)
-  take('smoothie', LANE_CAPS.smoothie)
-  take('protein', LANE_CAPS.protein)
-  for (const p of pool) {
-    if (chosen.length >= limit) break
-    if (used.has(p.id)) continue
-    chosen.push(p)
-    used.add(p.id)
-  }
-  return chosen
+  return ranked
+    .filter((place) => !exclude.has(place.id))
+    .sort((a, b) => {
+      const tierDiff = healthyQualityTier(a, a.signals ?? []) - healthyQualityTier(b, b.signals ?? [])
+      if (tierDiff !== 0) return tierDiff
+      return b.score - a.score
+    })
+    .slice(0, limit)
 }
 
 async function fetchHealthyDiscover(
@@ -396,7 +395,7 @@ function rankHealthyPool(
     const instant = healthyInstantBoost(p)
     return {
       ...p,
-      score: p.score + instant.points,
+      baseScore: p.score,
       reasons: Array.from(new Set([...instant.reasons, ...p.reasons])).slice(0, 4),
       lane: instant.lane,
       signals: instant.signals,
@@ -442,7 +441,7 @@ export async function runHealthyHunt(opts: {
   let ranked = rankHealthyPool(pool, rankOpts)
   let displayed = pickHealthyLanes(ranked)
   opts.onProgress?.({
-    status: 'Searching nearby, then reading reviews for grass-fed, clean oils, and healthy picks…',
+    status: 'Looking first for clean-food evidence such as grass-fed, pasture-raised, organic, and clean oils…',
     places: displayed,
   })
 
@@ -460,13 +459,13 @@ export async function runHealthyHunt(opts: {
         displayed = pickHealthyLanes(ranked)
         opts.onProgress?.({
           status:
-            'Checking Google, Yelp, TripAdvisor, and OpenTable for grass-fed, avocado oil, smoothie spots, and more…',
+            'Checking listings and reviews for grass-fed, no seed oils, avocado oil, organic sourcing, then salmon and quality whole-food fallbacks…',
           places: displayed,
         })
       }
     } catch {
       opts.onProgress?.({
-        status: 'Review search is limited right now — showing the best local healthy matches.',
+        status: 'Review search is limited right now — showing the best non-fast-food healthy matches.',
         places: displayed,
       })
     }
@@ -489,9 +488,8 @@ export async function runHealthyHunt(opts: {
   writeCache(key, result, cacheTtlUntilEndOfUtcDay())
   opts.onProgress?.({
     status:
-      'Signals are mentioned in public reviews and listings — not a kitchen inspection.',
+      'Clean-food signals come from public listings and reviews; when none are found, Hunt4Food falls back to quality whole-food restaurants.',
     places: displayed,
   })
   return result
 }
-

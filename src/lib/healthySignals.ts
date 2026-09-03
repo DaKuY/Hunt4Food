@@ -17,22 +17,43 @@ export const HEALTHY_SIGNAL_DEFS: Array<{
   label: string
   patterns: RegExp[]
 }> = [
-  { id: 'grass_fed', label: 'Grass-fed', patterns: [/grass[-\s]?fed/i] },
+  { id: 'grass_fed', label: 'Grass-fed', patterns: [/grass[-\s]?fed/i, /100%\s+grass[-\s]?fed/i] },
   {
     id: 'pasture_raised',
     label: 'Pasture-raised',
-    patterns: [/pasture[-\s]?raised/i, /pastured\s+(chicken|eggs?)/i],
+    patterns: [/pasture[-\s]?raised/i, /pastured\s+(chicken|eggs?|meat)/i, /regenerative\s+(beef|meat|farm)/i],
   },
   {
     id: 'no_seed_oils',
     label: 'No seed oils',
-    patterns: [/no seed oils?/i, /seed[-\s]?oil[-\s]?free/i, /doesn'?t use seed oil/i],
+    patterns: [
+      /no seed oils?/i,
+      /seed[-\s]?oil[-\s]?free/i,
+      /doesn'?t use seed oil/i,
+      /without seed oils?/i,
+      /zero seed oils?/i,
+    ],
   },
   { id: 'avocado_oil', label: 'Avocado oil', patterns: [/avocado oil/i] },
   {
     id: 'butter',
     label: 'Cooks with butter',
     patterns: [/cooked? in butter/i, /grass[-\s]?fed butter/i, /\bghee\b/i, /clarified butter/i],
+  },
+  {
+    id: 'organic',
+    label: 'Organic ingredients',
+    patterns: [/\borganic\b/i, /certified organic/i, /organic ingredients?/i, /organic produce/i],
+  },
+  {
+    id: 'wild_caught',
+    label: 'Wild-caught seafood',
+    patterns: [/wild[-\s]?caught/i, /wild salmon/i, /sustainably caught/i, /sustainable seafood/i],
+  },
+  {
+    id: 'locally_sourced',
+    label: 'Locally sourced',
+    patterns: [/locally sourced/i, /local farms?/i, /farm[-\s]?to[-\s]?table/i, /seasonal ingredients?/i],
   },
   { id: 'salmon', label: 'Salmon', patterns: [/\bsalmon\b/i] },
   { id: 'chicken_breast', label: 'Chicken breast', patterns: [/chicken breast/i, /grilled chicken/i] },
@@ -71,6 +92,41 @@ export const KNOWN_HEALTHY_CHAINS: KnownHealthyChain[] = [
   { name: 'Playa Bowls', lane: 'smoothie', aliases: ['playa bowls'] },
 ]
 
+const KNOWN_QUALITY_FALLBACKS = [
+  'moxies',
+  'sakuu',
+  'seasons 52',
+  'earls kitchen',
+  'hillstone',
+  'houstons',
+  'houston s',
+]
+
+const PRIMARY_SIGNAL_IDS = new Set<HealthySignalId>([
+  'grass_fed',
+  'pasture_raised',
+  'no_seed_oils',
+  'avocado_oil',
+  'butter',
+  'organic',
+  'wild_caught',
+  'locally_sourced',
+])
+
+const HEALTHY_SIGNAL_WEIGHTS: Record<HealthySignalId, number> = {
+  grass_fed: 38,
+  pasture_raised: 34,
+  no_seed_oils: 42,
+  avocado_oil: 30,
+  butter: 18,
+  organic: 24,
+  wild_caught: 24,
+  locally_sourced: 18,
+  salmon: 14,
+  chicken_breast: 9,
+  smoothie: 5,
+}
+
 function normalizeName(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
 }
@@ -88,6 +144,42 @@ export function matchKnownChain(place: Restaurant): KnownHealthyChain | null {
 
 export function listingBlob(place: Restaurant, extra = ''): string {
   return `${place.name} ${place.cuisineRaw ?? ''} ${place.cuisines.join(' ')} ${place.amenity ?? ''} ${place.address ?? ''} ${extra}`
+}
+
+export function isKnownQualityFallback(place: Restaurant): boolean {
+  const name = normalizeName(place.name)
+  return KNOWN_QUALITY_FALLBACKS.some((alias) => name.includes(normalizeName(alias)))
+}
+
+export function hasPrimaryHealthyEvidence(signals: HealthySignal[]): boolean {
+  return signals.some((signal) => PRIMARY_SIGNAL_IDS.has(signal.id))
+}
+
+export function healthySignalScore(signals: HealthySignal[]): number {
+  return signals.reduce((total, signal) => {
+    const sourceBonus = signal.source === 'listing' ? 0 : 6
+    return total + HEALTHY_SIGNAL_WEIGHTS[signal.id] + sourceBonus
+  }, 0)
+}
+
+export function isQualityWholeFoodFallback(place: Restaurant, signals: HealthySignal[]): boolean {
+  if (isKnownQualityFallback(place)) return true
+  const ids = new Set(signals.map((signal) => signal.id))
+  if (ids.has('salmon') || ids.has('wild_caught') || ids.has('chicken_breast')) return true
+
+  const blob = listingBlob(place).toLowerCase()
+  return /\b(seafood|salmon|fish|sushi|sashimi|steak|steakhouse|new american|modern american|bistro|grill|mediterranean)\b/.test(blob)
+}
+
+/**
+ * Lower is better. Healthy search fills explicit clean-food evidence first,
+ * then quality whole-food restaurants, then weaker healthy-ish matches.
+ */
+export function healthyQualityTier(place: Restaurant, signals: HealthySignal[]): number {
+  if (matchKnownChain(place)?.lane === 'clean_cooking' || hasPrimaryHealthyEvidence(signals)) return 0
+  if (isQualityWholeFoodFallback(place, signals)) return 1
+  if (matchKnownChain(place) || signals.some((signal) => signal.id === 'smoothie')) return 2
+  return 3
 }
 
 function sourceFromHint(hint?: HealthySignalSource): HealthySignalSource {
@@ -139,15 +231,13 @@ export function assignHealthyLane(
   if (chain) return chain.lane
 
   const ids = new Set(signals.map((s) => s.id))
-  if (ids.has('smoothie') && !ids.has('grass_fed') && !ids.has('avocado_oil')) return 'smoothie'
-  if (ids.has('grass_fed') || ids.has('pasture_raised') || ids.has('avocado_oil') || ids.has('no_seed_oils')) {
-    return 'clean_cooking'
-  }
-  if (ids.has('salmon') || ids.has('chicken_breast')) return 'protein'
+  if (ids.has('smoothie') && !hasPrimaryHealthyEvidence(signals)) return 'smoothie'
+  if (hasPrimaryHealthyEvidence(signals)) return 'clean_cooking'
+  if (ids.has('salmon') || ids.has('chicken_breast') || ids.has('wild_caught')) return 'protein'
 
   const blob = listingBlob(place).toLowerCase()
   if (/smoothie|juice|açaí|acai/.test(blob)) return 'smoothie'
-  if (/salmon|chicken|poke|seafood/.test(blob)) return 'protein'
+  if (/salmon|chicken|poke|seafood|sushi|fish/.test(blob)) return 'protein'
   return 'clean_cooking'
 }
 
@@ -160,15 +250,28 @@ export function healthyInstantBoost(place: Restaurant): {
   const chain = matchKnownChain(place)
   const signals = extractHealthySignals(listingBlob(place), sourceFromHint('listing'))
   const lane = assignHealthyLane(place, signals, chain?.lane)
-  let points = signals.length * 6
+  let points = healthySignalScore(signals)
   const reasons: string[] = []
-  if (chain) {
-    points += 22
-    reasons.push(`Similar to ${chain.name}`)
+
+  if (chain?.lane === 'clean_cooking') {
+    points += 45
+    reasons.push(`Known clean-food restaurant like ${chain.name}`)
+  } else if (chain) {
+    points += 12
+    reasons.push(`Known healthy option like ${chain.name}`)
   }
-  if (signals.length) {
+
+  if (isKnownQualityFallback(place)) {
+    points += 16
+    reasons.push('Quality full-service fallback')
+  }
+
+  if (hasPrimaryHealthyEvidence(signals)) {
+    reasons.push(`Clean-food evidence: ${signals.filter((s) => PRIMARY_SIGNAL_IDS.has(s.id)).map((s) => s.label.toLowerCase()).slice(0, 3).join(', ')}`)
+  } else if (signals.length) {
     reasons.push(`Listing mentions ${signals.map((s) => s.label.toLowerCase()).slice(0, 3).join(', ')}`)
   }
+
   return { points, reasons, lane, signals }
 }
 

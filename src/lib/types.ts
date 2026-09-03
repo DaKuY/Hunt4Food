@@ -78,6 +78,9 @@ export type HealthySignalId =
   | 'no_seed_oils'
   | 'avocado_oil'
   | 'butter'
+  | 'organic'
+  | 'wild_caught'
+  | 'locally_sourced'
   | 'salmon'
   | 'chicken_breast'
   | 'smoothie'
@@ -99,6 +102,7 @@ export type HealthySignal = {
 
 export type RankedRestaurant = Restaurant & {
   score: number
+  baseScore?: number
   reasons: string[]
   distanceKm: number
   lane?: HealthyLane
