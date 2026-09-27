@@ -52,6 +52,7 @@ function dedupe(places: ProviderCandidate[]): ProviderCandidate[] {
     const name = normalizeName(place.name)
     const duplicate = out.find(
       (candidate) =>
+        candidate.source === place.source &&
         normalizeName(candidate.name) === name &&
         Math.abs(candidate.lat - place.lat) < 0.004 &&
         Math.abs(candidate.lon - place.lon) < 0.004,
