@@ -159,16 +159,21 @@ function SearchFlow() {
 
   const schedulePrefetch = useCallback((bounds: MapBounds) => {
     prefetchPromiseRef.current = null
-    const promise = fetchRestaurants(bounds)
+    const promise: Promise<Restaurant[]> = fetchRestaurants(bounds)
       .then((raw) => {
-        poolRef.current = raw
-        setRawPlaces(raw)
+        // A slower prefetch for the previous city must not overwrite the new city's pool.
+        if (prefetchPromiseRef.current === promise) {
+          poolRef.current = raw
+          setRawPlaces(raw)
+        }
         return raw
       })
       .catch((err) => {
-        prefetchPromiseRef.current = null
+        if (prefetchPromiseRef.current === promise) prefetchPromiseRef.current = null
         throw err
       })
+    // Background prefetch: a failure is handled when a search awaits it, so do not report it as unhandled.
+    promise.catch(() => {})
     prefetchPromiseRef.current = promise
   }, [])
 
@@ -528,6 +533,8 @@ function SearchFlow() {
         try {
           const selection = await coordsToCitySelection(pos.coords.latitude, pos.coords.longitude)
           if (!cancelled) confirmCity(selection)
+        } catch {
+          // Reverse geocoding failed: fall back to the manual city step.
         } finally {
           if (!cancelled) setResolvingLocation(false)
         }
@@ -760,13 +767,33 @@ function TasteRoute() {
   )
 }
 
+/** Shared links are untrusted input: keep only well-formed items so rendering cannot crash. */
+function parseSharedShortlist(raw: string): ShortlistItem[] {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    // Older links were double-encoded.
+    parsed = JSON.parse(decodeURIComponent(raw))
+  }
+  if (!Array.isArray(parsed)) return []
+  const seen = new Set<string>()
+  return parsed.flatMap((item): ShortlistItem[] => {
+    if (!item || typeof item !== 'object') return []
+    const { id, name, city } = item as Record<string, unknown>
+    if (typeof id !== 'string' || typeof name !== 'string' || seen.has(id)) return []
+    seen.add(id)
+    return [{ ...(item as ShortlistItem), id, name, city: typeof city === 'string' ? city : undefined }]
+  })
+}
+
 function ShortlistView() {
   const [params] = useSearchParams()
   const items = useMemo(() => {
     try {
       const raw = params.get('data')
       if (!raw) return []
-      return JSON.parse(decodeURIComponent(raw)) as ShortlistItem[]
+      return parseSharedShortlist(raw)
     } catch {
       return []
     }

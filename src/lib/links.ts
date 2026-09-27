@@ -1,5 +1,16 @@
 import type { Restaurant } from './types'
 
+/** Third-party URLs (OSM tags, proxy/API responses) render as live hrefs: allow http(s) only. */
+export function safeExternalUrl(raw: string | null | undefined, fallback: string): string {
+  if (!raw) return fallback
+  try {
+    const url = new URL(raw)
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.toString() : fallback
+  } catch {
+    return fallback
+  }
+}
+
 export function googleMapsUrl(place: Restaurant, cityLabel: string): string {
   const q = encodeURIComponent(`${place.name} ${cityLabel}`.trim())
   return `https://www.google.com/maps/search/?api=1&query=${q}`
@@ -22,13 +33,15 @@ export function tripadvisorUrl(place: Restaurant, cityLabel: string): string {
 }
 
 export function menuOrWebsiteUrl(place: Restaurant, cityLabel: string): { href: string; label: string } {
-  if (place.website) {
-    const href = place.website.startsWith('http') ? place.website : `https://${place.website}`
-    return { href, label: 'Website' }
-  }
   const q = encodeURIComponent(`${place.name} ${cityLabel} menu`)
+  const search = `https://www.google.com/search?q=${q}`
+  if (place.website) {
+    const raw = /^https?:\/\//i.test(place.website) ? place.website : `https://${place.website}`
+    const href = safeExternalUrl(raw, '')
+    if (href) return { href, label: 'Website' }
+  }
   return {
-    href: `https://www.google.com/search?q=${q}`,
+    href: search,
     label: 'Find menu',
   }
 }

@@ -318,6 +318,8 @@ describe('isUngatedPath', () => {
     expect(isUngatedPath('/')).toBe(false)
     expect(isUngatedPath('/index.html')).toBe(false)
     expect(isUngatedPath('/api/session')).toBe(false)
+    expect(isUngatedPath('/api/discover.js')).toBe(false)
+    expect(isUngatedPath('/api/logo.png')).toBe(false)
   })
 
   it('skips hashed assets, favicons, and Vite internals', () => {
