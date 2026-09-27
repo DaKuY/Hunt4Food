@@ -425,7 +425,6 @@ function SearchFlow() {
     setResolvingLocation(false)
     poolRef.current = []
     setRawPlaces([])
-    schedulePrefetch(selection.bounds)
     setParams((prev) => {
       const next = new URLSearchParams(prev)
       next.set('city', selection.label)
