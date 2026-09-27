@@ -252,8 +252,8 @@ function providerQualityBoost(place: Restaurant): { points: number; reasons: str
   points = Math.max(-5, Math.min(8, points))
 
   const reasons: string[] = []
-  if (points >= 3) reasons.push('Strong provider rating with meaningful review volume')
-  else if (points <= -3) reasons.push('Provider ratings are mixed')
+  if (points >= 3) reasons.push('Strong public ratings with meaningful review volume')
+  else if (points <= -3) reasons.push('Mixed public ratings from provider data')
 
   return { points, reasons }
 }
@@ -369,7 +369,13 @@ export function rankRestaurants(
     const uniq = Array.from(new Set(reasons)).slice(0, 4)
     if (!uniq.length) uniq.push('Mapped local spot that matched your search area')
 
-    return { ...place, score, reasons: uniq, distanceKm }
+    return {
+      ...place,
+      score,
+      ratingAdjustment: providerQuality.points,
+      reasons: uniq,
+      distanceKm,
+    }
   })
 
   return ranked
