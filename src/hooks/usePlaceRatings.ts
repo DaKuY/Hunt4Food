@@ -32,7 +32,7 @@ export function usePlaceRatings(
   const [loading, setLoading] = useState(false)
   const placesRef = useRef(places)
   placesRef.current = places
-  const placeIds = places.map((p) => p.id).join(',')
+  const placeIds = places.map((p) => p.id).sort().join(',')
 
   useEffect(() => {
     if (!enabled || !placeIds) return
