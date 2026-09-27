@@ -1,6 +1,7 @@
 import { cuisineById } from '../data/cuisines'
 import { googlePriceLevel, yelpPriceLevel } from './priceRange'
 import { seedSourceRating } from './ratings'
+import { cacheTtlUntilEndOfUtcDay, readCache, utcDayKey, writeCache } from './storage'
 import type { CitySelection, CuisineId, Restaurant } from './types'
 
 export type ProviderCandidate = {
@@ -120,6 +121,16 @@ export async function discoverProviderCandidates(
   const terms = buildDiscoveryTerms(selectedCuisines, keyword)
   if (!terms.length) return []
 
+  const cacheKey = [
+    'providerDiscovery:v1',
+    utcDayKey(),
+    city.center.lat.toFixed(3),
+    city.center.lon.toFixed(3),
+    terms.map((term) => term.toLowerCase()).sort().join('|'),
+  ].join(':')
+  const cached = readCache<ProviderCandidate[]>(cacheKey)
+  if (cached?.length) return cached
+
   const params = new URLSearchParams({
     lat: String(city.center.lat),
     lon: String(city.center.lon),
@@ -133,7 +144,9 @@ export async function discoverProviderCandidates(
   if (!response.ok) return []
 
   const data = (await response.json()) as ProviderDiscoveryResponse
-  return data.places ?? []
+  const places = data.places ?? []
+  if (places.length) writeCache(cacheKey, places, cacheTtlUntilEndOfUtcDay())
+  return places
 }
 
 export function mergeProviderCandidates(
@@ -153,9 +166,20 @@ export function mergeProviderCandidates(
 
     if (existing) {
       existing.cuisines = Array.from(new Set([...existing.cuisines, ...categories]))
+      existing.discoveryTerms = Array.from(
+        new Set([...(existing.discoveryTerms ?? []), candidate.matchedTerm].filter(Boolean)),
+      )
       existing.cuisineRaw = Array.from(
-        new Set([existing.cuisineRaw, ...candidate.categories, candidate.matchedTerm].filter(Boolean)),
+        new Set([existing.cuisineRaw, ...candidate.categories].filter(Boolean)),
       ).join(', ')
+      const candidateReviews = candidate.reviewCount ?? 0
+      if (
+        candidate.rating != null &&
+        (existing.providerRating == null || candidateReviews >= (existing.providerReviewCount ?? 0))
+      ) {
+        existing.providerRating = candidate.rating
+        existing.providerReviewCount = candidate.reviewCount ?? undefined
+      }
       existing.address ||= candidate.address
       existing.website ||= candidate.website
       existing.phone ||= candidate.phone
@@ -170,7 +194,10 @@ export function mergeProviderCandidates(
       lat: candidate.lat,
       lon: candidate.lon,
       cuisines: categories,
-      cuisineRaw: [...candidate.categories, candidate.matchedTerm].filter(Boolean).join(', '),
+      cuisineRaw: candidate.categories.filter(Boolean).join(', '),
+      discoveryTerms: [candidate.matchedTerm],
+      providerRating: candidate.rating ?? undefined,
+      providerReviewCount: candidate.reviewCount ?? undefined,
       amenity: 'restaurant',
       address: candidate.address,
       website: candidate.website,
