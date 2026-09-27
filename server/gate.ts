@@ -19,6 +19,7 @@ const PUBLIC_FILES = new Set([
 /** Static / Vite internals: no user data. HTML, `/`, and `/api/*` stay gated. */
 export function isUngatedPath(pathname: string): boolean {
   const path = pathname.split('?')[0] || '/'
+  if (path === '/api' || path.startsWith('/api/')) return false
   if (PUBLIC_FILES.has(path)) return true
   if (
     path.startsWith('/assets/') ||

@@ -1,10 +1,17 @@
 import type { PlaceRatings } from '../lib/ratings'
+import { safeExternalUrl } from '../lib/links'
 import { formatRating } from '../lib/ratings'
 
 type Props = {
   ratings: PlaceRatings | null
   loading?: boolean
 }
+
+const FALLBACK_URLS = {
+  google: 'https://www.google.com/maps',
+  yelp: 'https://www.yelp.com',
+  tripadvisor: 'https://www.tripadvisor.com',
+} as const
 
 const LABELS = {
   google: 'Google',
@@ -26,7 +33,7 @@ export function RatingsRow({ ratings, loading }: Props) {
           <a
             key={key}
             className={`rating-pill${r.rating == null ? ' rating-pill--empty' : ''}`}
-            href={r.url}
+            href={safeExternalUrl(r.url, FALLBACK_URLS[key])}
             target="_blank"
             rel="noreferrer"
             title={r.error ?? (r.rating != null ? `Open ${LABELS[key]}` : `Open ${LABELS[key]} (rating unavailable)`)}

@@ -21,7 +21,10 @@ function doGet(e) {
   var city = String(p.city || '');
   var lat = parseFloat(p.lat);
   var lon = parseFloat(p.lon);
-  var callback = p.callback;
+  // JSONP callback is echoed as JavaScript: only allow a plain identifier path.
+  var callback = /^[A-Za-z_$][\w$]{0,63}(\.[A-Za-z_$][\w$]{0,63}){0,3}$/.test(String(p.callback || ''))
+    ? String(p.callback)
+    : '';
   var wantDishes = p.dishes === '1' || p.dishes === 'true';
   var googleKey = String(p.googleKey || '');
 

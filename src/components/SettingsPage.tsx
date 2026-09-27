@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { getGoogleQuota, googleQuotaMessage } from '../lib/googleQuota'
-import { jsonpGet, ratingsProxyConfigured, ratingsProxyUrl } from '../lib/ratingsProxy'
+import { isAllowedProxyUrl, jsonpGet, ratingsProxyConfigured, ratingsProxyUrl } from '../lib/ratingsProxy'
 import { loadSettings, saveSettings } from '../lib/settings'
 
 export function SettingsPage() {
@@ -13,6 +13,10 @@ export function SettingsPage() {
   const quota = getGoogleQuota()
 
   function save() {
+    if (proxyUrl.trim() && !isAllowedProxyUrl(proxyUrl)) {
+      setMessage('Proxy URL must be a Google Apps Script web app URL ending in /exec.')
+      return
+    }
     saveSettings({
       googlePlacesApiKey: googleKey.trim(),
       ratingsProxyUrl: proxyUrl.trim(),

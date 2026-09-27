@@ -4,6 +4,7 @@ import {
   googleMapsUrl,
   menuOrWebsiteUrl,
   openTableUrl,
+  safeExternalUrl,
   tripadvisorUrl,
   yelpUrl,
 } from '../lib/links'
@@ -181,7 +182,7 @@ export function ResultsStep({
           {place.evidenceQuote ? <p className="evidence-quote">{place.evidenceQuote}</p> : null}
           {seedOil?.grade ? (
             <p className="seed-oil-badge">
-              <a href={seedOil.url} target="_blank" rel="noreferrer" title={seedOil.cookingOil ?? undefined}>
+              <a href={safeExternalUrl(seedOil.url, 'https://seedoiltracker.com')} target="_blank" rel="noreferrer" title={seedOil.cookingOil ?? undefined}>
                 Seed Oil Tracker: grade {seedOil.grade}
                 {seedOil.risk ? ` · ${seedOil.risk}` : ''}
                 {seedOil.chain ? ` · ${seedOil.chain}` : ''}
