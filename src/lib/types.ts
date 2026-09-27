@@ -104,6 +104,7 @@ export type RankedRestaurant = Restaurant & {
   score: number
   baseScore?: number
   seedOilAdjustment?: number
+  ratingAdjustment?: number
   reasons: string[]
   distanceKm: number
   lane?: HealthyLane
