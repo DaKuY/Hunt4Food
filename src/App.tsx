@@ -20,6 +20,7 @@ import { ensureCacheGeneration, pruneExpiredCache } from './lib/storage'
 import { attachSeedOilSignals, pickHealthyLanes, runHealthyHunt } from './lib/healthySearch'
 import { fetchRestaurants } from './lib/overpass'
 import { rankRestaurants } from './lib/rank'
+import { ratingQualityAdjustment } from './lib/ratings'
 import { seedOilGradeScore } from './lib/seedOil'
 import {
   loadRecentCities,
@@ -210,6 +211,42 @@ function SearchFlow() {
       searchAbortRef.current?.abort()
     }
   }, [])
+
+  useEffect(() => {
+    if (displayPlaces.length === 0) return
+    const hasRatings = displayPlaces.some((place) => {
+      const ratings = ratingsMap[place.id]
+      return Boolean(
+        ratings &&
+          [ratings.google, ratings.yelp, ratings.tripadvisor].some((source) => source.rating != null),
+      )
+    })
+    if (!hasRatings) return
+
+    setDisplayPlaces((prev) => {
+      const scored = prev.map((place) => {
+        const previousAdjustment = place.ratingAdjustment ?? 0
+        const baseScore = place.score - previousAdjustment
+        const quality = ratingQualityAdjustment(ratingsMap[place.id])
+        const reasons = place.reasons.filter(
+          (reason) =>
+            !reason.startsWith('Strong public ratings') &&
+            !reason.startsWith('Mixed public ratings'),
+        )
+        if (quality.reason) reasons.unshift(quality.reason)
+        return {
+          ...place,
+          score: baseScore + quality.points,
+          ratingAdjustment: quality.points,
+          reasons: reasons.slice(0, 4),
+        }
+      })
+
+      return healthyMode
+        ? pickHealthyLanes(scored, scored.length)
+        : [...scored].sort((a, b) => b.score - a.score)
+    })
+  }, [ratingsMap, healthyMode, displayPlaces.length])
 
   useEffect(() => {
     if ((!dietary.includes('no_seed_oils') && !healthyMode) || seedOilLoading || displayPlaces.length === 0) return
