@@ -186,6 +186,15 @@ function sourceFromHint(hint?: HealthySignalSource): HealthySignalSource {
   return hint ?? 'listing'
 }
 
+function isNegatedSignal(text: string, index: number, id: HealthySignalId): boolean {
+  if (id === 'no_seed_oils') return false
+  const prefix = text.slice(Math.max(0, index - 36), index)
+  const clause = prefix.split(/[.,;:!?]/).pop()?.toLowerCase() ?? ''
+  return /(?:\bnot\s+|\bno\s+|\bwithout\s+|\bnon[-\s]?|\bdoesn['’]?t\s+(?:use\s+)?|\bdon['’]?t\s+(?:use\s+)?)(?:\w+\s+){0,2}$/.test(
+    clause,
+  )
+}
+
 export function extractHealthySignals(
   text: string,
   source: HealthySignalSource = 'listing',
@@ -196,6 +205,7 @@ export function extractHealthySignals(
     const hit = def.patterns.find((p) => p.test(text))
     if (!hit) continue
     const match = text.match(hit)
+    if (match?.index != null && isNegatedSignal(text, match.index, def.id)) continue
     let quote: string | undefined
     if (match?.index != null) {
       const start = Math.max(0, match.index - 50)

@@ -16,33 +16,45 @@ export function emptyTaste(): TasteProfile {
   }
 }
 
+export function rebuildTasteWeights(taste: TasteProfile): TasteProfile {
+  const cuisineWeights: Record<string, number> = {}
+  const vibeWeights: Record<string, number> = {}
+
+  const addCuisine = (cuisines: string[], delta: number) => {
+    for (const cuisine of cuisines) {
+      const key = cuisine.toLowerCase()
+      cuisineWeights[key] = (cuisineWeights[key] ?? 0) + delta
+    }
+  }
+
+  for (const place of taste.loved) {
+    addCuisine(place.cuisines, 2)
+    for (const vibe of place.vibeTags) vibeWeights[vibe] = (vibeWeights[vibe] ?? 0) + 1
+  }
+  for (const place of taste.skipped) addCuisine(place.cuisines, -1)
+
+  return { ...taste, cuisineWeights, vibeWeights }
+}
+
 export function loadTaste(): TasteProfile {
   const t = readJson<TasteProfile>(KEY, emptyTaste())
   if (t.version !== 1) return emptyTaste()
-  return {
+  return rebuildTasteWeights({
     ...emptyTaste(),
     ...t,
     loved: t.loved ?? [],
     skipped: t.skipped ?? [],
-    cuisineWeights: t.cuisineWeights ?? {},
     dietaryPrefs: t.dietaryPrefs ?? [],
-    vibeWeights: t.vibeWeights ?? {},
-  }
+  })
 }
 
 export function saveTaste(taste: TasteProfile): void {
-  writeJson(KEY, {
+  const normalized = rebuildTasteWeights({
     ...taste,
     loved: taste.loved.slice(0, MAX_LOVED),
     skipped: taste.skipped.slice(0, MAX_SKIPPED),
   })
-}
-
-function bumpCuisine(weights: Record<string, number>, cuisines: string[], delta: number) {
-  for (const c of cuisines) {
-    const key = c.toLowerCase()
-    weights[key] = (weights[key] ?? 0) + delta
-  }
+  writeJson(KEY, normalized)
 }
 
 export function lovePlace(taste: TasteProfile, place: Omit<TastePlace, 'savedAt'> & { savedAt?: string }): TasteProfile {
@@ -58,12 +70,9 @@ export function lovePlace(taste: TasteProfile, place: Omit<TastePlace, 'savedAt'
     },
     ...next.loved.filter((l) => l.name.toLowerCase() !== place.name.toLowerCase()),
   ].slice(0, MAX_LOVED)
-  bumpCuisine(next.cuisineWeights, place.cuisines, 2)
-  for (const v of place.vibeTags ?? []) {
-    next.vibeWeights[v] = (next.vibeWeights[v] ?? 0) + 1
-  }
-  saveTaste(next)
-  return next
+  const normalized = rebuildTasteWeights(next)
+  saveTaste(normalized)
+  return normalized
 }
 
 export function skipPlace(taste: TasteProfile, place: Omit<TastePlace, 'savedAt'> & { savedAt?: string }): TasteProfile {
@@ -79,9 +88,9 @@ export function skipPlace(taste: TasteProfile, place: Omit<TastePlace, 'savedAt'
     },
     ...next.skipped.filter((s) => s.name.toLowerCase() !== place.name.toLowerCase()),
   ].slice(0, MAX_SKIPPED)
-  bumpCuisine(next.cuisineWeights, place.cuisines, -1)
-  saveTaste(next)
-  return next
+  const normalized = rebuildTasteWeights(next)
+  saveTaste(normalized)
+  return normalized
 }
 
 export function setDietaryPrefs(taste: TasteProfile, dietary: DietaryId[]): TasteProfile {
@@ -91,7 +100,7 @@ export function setDietaryPrefs(taste: TasteProfile, dietary: DietaryId[]): Tast
 }
 
 export function removeLoved(taste: TasteProfile, id: string): TasteProfile {
-  const next = { ...taste, loved: taste.loved.filter((l) => l.id !== id) }
+  const next = rebuildTasteWeights({ ...taste, loved: taste.loved.filter((l) => l.id !== id) })
   saveTaste(next)
   return next
 }
@@ -105,12 +114,12 @@ export function importTaste(json: string): TasteProfile {
   if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.loved)) {
     throw new Error('Invalid taste profile JSON')
   }
-  const next: TasteProfile = {
+  const next = rebuildTasteWeights({
     ...emptyTaste(),
     ...parsed,
     loved: (parsed.loved ?? []).slice(0, MAX_LOVED),
     skipped: (parsed.skipped ?? []).slice(0, MAX_SKIPPED),
-  }
+  })
   saveTaste(next)
   return next
 }

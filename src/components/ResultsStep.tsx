@@ -7,12 +7,12 @@ import {
   tripadvisorUrl,
   yelpUrl,
 } from '../lib/links'
-import { HEALTHY_LANE_LABELS, signalSourceLabel } from '../lib/healthySignals'
+import { signalSourceLabel } from '../lib/healthySignals'
 import { FIRST_RESULT_ID, scrollToFirstResult } from '../lib/scroll'
 import type { PlaceRatings } from '../lib/ratings'
-import { formatDistanceMiles, isFastFood, isProbablyOpenNow } from '../lib/rank'
+import { formatDistanceMiles, isProbablyOpenNow } from '../lib/rank'
 import type { SeedOilInfo } from '../lib/seedOil'
-import type { HealthyLane, RankedRestaurant } from '../lib/types'
+import type { RankedRestaurant } from '../lib/types'
 import { RatingsRow } from './RatingsRow'
 
 const ResultsMap = lazy(() =>
@@ -31,7 +31,6 @@ type Props = {
   searchStatus?: string | null
   openNowOnly: boolean
   hasWebsiteOnly: boolean
-  noFastFood: boolean
   ratingsMap: Record<string, PlaceRatings>
   ratingsLoading: boolean
   seedOilMap: Record<string, SeedOilInfo>
@@ -44,7 +43,6 @@ type Props = {
   onSearchAgain: () => void
   onToggleOpenNow: () => void
   onToggleWebsite: () => void
-  onToggleNoFastFood: () => void
   onLove: (place: RankedRestaurant) => void
   onSkip: (place: RankedRestaurant) => void
   onShortlist: (place: RankedRestaurant) => void
@@ -58,7 +56,6 @@ type Props = {
   scrollToResultsKey?: number
 }
 
-const LANE_ORDER: HealthyLane[] = ['clean_cooking', 'smoothie', 'protein']
 
 export function ResultsStep({
   places,
@@ -72,7 +69,6 @@ export function ResultsStep({
   searchStatus = null,
   openNowOnly,
   hasWebsiteOnly,
-  noFastFood,
   ratingsMap,
   ratingsLoading,
   seedOilMap,
@@ -85,7 +81,6 @@ export function ResultsStep({
   onSearchAgain,
   onToggleOpenNow,
   onToggleWebsite,
-  onToggleNoFastFood,
   onLove,
   onSkip,
   onShortlist,
@@ -99,7 +94,6 @@ export function ResultsStep({
   scrollToResultsKey = 0,
 }: Props) {
   const filtered = places.filter((p) => {
-    if (noFastFood && isFastFood(p)) return false
     if (hasWebsiteOnly && !p.website) return false
     if (openNowOnly) {
       const open = isProbablyOpenNow(p.openingHours)
@@ -198,7 +192,7 @@ export function ResultsStep({
           ) : null}
           {dishes?.length ? (
             <p className="popular-dishes">
-              <span className="popular-dishes-label">Popular dishes</span>
+              <span className="popular-dishes-label">Typical dishes</span>
               {dishes.join(' · ')}
             </p>
           ) : dishesLoading ? (
@@ -257,15 +251,6 @@ export function ResultsStep({
     )
   }
 
-  const laneGroups = healthyMode
-    ? LANE_ORDER.map((lane) => ({
-        lane,
-        places: filtered.filter((p) => (p.lane ?? 'clean_cooking') === lane),
-      })).filter((g) => g.places.length > 0)
-    : []
-
-  let rankCursor = 0
-
   return (
     <section className="step results-step">
       <header className="step-header">
@@ -321,13 +306,6 @@ export function ResultsStep({
           onClick={onToggleWebsite}
         >
           Has website
-        </button>
-        <button
-          type="button"
-          className={`chip ghost ${noFastFood ? 'on' : ''}`}
-          onClick={onToggleNoFastFood}
-        >
-          No fast food
         </button>
         <button type="button" className="chip ghost" onClick={onCopySearchLink}>
           Copy search link
@@ -400,21 +378,7 @@ export function ResultsStep({
         </Suspense>
       )}
 
-      {healthyMode && laneGroups.length > 0 ? (
-        laneGroups.map((group) => (
-          <div key={group.lane} className="lane-block">
-            <h3>{HEALTHY_LANE_LABELS[group.lane]}</h3>
-            <ol className="result-list">
-              {group.places.map((place) => {
-                rankCursor += 1
-                return renderCard(place, rankCursor)
-              })}
-            </ol>
-          </div>
-        ))
-      ) : (
-        <ol className="result-list">{filtered.map((place, index) => renderCard(place, index + 1))}</ol>
-      )}
+      <ol className="result-list">{filtered.map((place, index) => renderCard(place, index + 1))}</ol>
 
       <div className="step-actions row">
         {!(loading && filtered.length === 0) && filtered.length > 0 && (

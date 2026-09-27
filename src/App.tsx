@@ -20,6 +20,7 @@ import { ensureCacheGeneration, pruneExpiredCache } from './lib/storage'
 import { attachSeedOilSignals, pickHealthyLanes, runHealthyHunt } from './lib/healthySearch'
 import { fetchRestaurants } from './lib/overpass'
 import { rankRestaurants } from './lib/rank'
+import { ratingQualityAdjustment } from './lib/ratings'
 import { seedOilGradeScore } from './lib/seedOil'
 import {
   loadRecentCities,
@@ -142,7 +143,6 @@ function SearchFlow() {
   const [error, setError] = useState<string | null>(null)
   const [openNowOnly, setOpenNowOnly] = useState(false)
   const [hasWebsiteOnly, setHasWebsiteOnly] = useState(false)
-  const [noFastFood, setNoFastFood] = useState(false)
   const [shortlist, setShortlist] = useState<ShortlistItem[]>(() => loadShortlist())
   const [shareMessage, setShareMessage] = useState<string | null>(null)
   const [healthyStatus, setHealthyStatus] = useState<string | null>(null)
@@ -153,11 +153,8 @@ function SearchFlow() {
   const poolRef = useRef<Restaurant[]>([])
   const healthyPoolRef = useRef<RankedRestaurant[]>([])
   const autoRanRef = useRef(false)
-  const seedOilBoostRef = useRef(false)
   const tasteRef = useRef(taste)
-  const noFastFoodRef = useRef(noFastFood)
   tasteRef.current = taste
-  noFastFoodRef.current = noFastFood
 
   const schedulePrefetch = useCallback((bounds: MapBounds) => {
     prefetchPromiseRef.current = null
@@ -216,27 +213,76 @@ function SearchFlow() {
   }, [])
 
   useEffect(() => {
+    if (displayPlaces.length === 0) return
+    const hasRatings = displayPlaces.some((place) => {
+      const ratings = ratingsMap[place.id]
+      return Boolean(
+        ratings &&
+          [ratings.google, ratings.yelp, ratings.tripadvisor].some((source) => source.rating != null),
+      )
+    })
+    if (!hasRatings) return
+
+    setDisplayPlaces((prev) => {
+      const scored = prev.map((place) => {
+        const previousAdjustment = place.ratingAdjustment ?? 0
+        const baseScore = place.score - previousAdjustment
+        const quality = ratingQualityAdjustment(ratingsMap[place.id])
+        const reasons = place.reasons.filter(
+          (reason) =>
+            !reason.startsWith('Strong public ratings') &&
+            !reason.startsWith('Mixed public ratings'),
+        )
+        if (quality.reason) reasons.unshift(quality.reason)
+        return {
+          ...place,
+          score: baseScore + quality.points,
+          ratingAdjustment: quality.points,
+          reasons: reasons.slice(0, 4),
+        }
+      })
+
+      return healthyMode
+        ? pickHealthyLanes(scored, scored.length)
+        : [...scored].sort((a, b) => b.score - a.score)
+    })
+  }, [ratingsMap, healthyMode, displayPlaces.length])
+
+  useEffect(() => {
     if ((!dietary.includes('no_seed_oils') && !healthyMode) || seedOilLoading || displayPlaces.length === 0) return
-    if (seedOilBoostRef.current) return
     const hasGrade = displayPlaces.some((p) => seedOilMap[p.id]?.grade)
     if (!hasGrade) return
 
-    seedOilBoostRef.current = true
     setDisplayPlaces((prev) => {
       const scored = prev.map((p) => {
         const info = seedOilMap[p.id]
-        if (!info?.grade) return p
+        const previousAdjustment = p.seedOilAdjustment ?? 0
+        const baseScore = p.score - previousAdjustment
+        if (!info?.grade) {
+          return previousAdjustment === 0 ? p : { ...p, score: baseScore, seedOilAdjustment: 0 }
+        }
+
         const boost = seedOilGradeScore(info.grade)
-        if (boost === 0) return p
         const reasons = [...p.reasons]
         const msg =
           boost > 0
             ? `Seed Oil Tracker grade ${info.grade} — lower seed-oil risk`
             : `Seed Oil Tracker grade ${info.grade} — higher seed-oil use`
-        if (!reasons.some((r) => r.includes('Seed Oil Tracker'))) reasons.unshift(msg)
-        return { ...p, score: p.score + boost, reasons: reasons.slice(0, 4) }
+        const withoutOldSeedOil = reasons.filter((r) => !r.includes('Seed Oil Tracker'))
+        if (boost !== 0) withoutOldSeedOil.unshift(msg)
+
+        return {
+          ...p,
+          score: baseScore + boost,
+          seedOilAdjustment: boost,
+          reasons: withoutOldSeedOil.slice(0, 4),
+        }
       })
-      return attachSeedOilSignals(scored, seedOilMap)
+
+      const withSignals = attachSeedOilSignals(scored, seedOilMap)
+      return healthyMode
+        ? pickHealthyLanes(withSignals, withSignals.length)
+        : [...withSignals].sort((a, b) => b.score - a.score)
     })
   }, [dietary, healthyMode, seedOilMap, seedOilLoading, displayPlaces.length])
 
@@ -247,7 +293,6 @@ function SearchFlow() {
       searchAbortRef.current = ctrl
       setError(null)
       setStep('results')
-      seedOilBoostRef.current = false
       setFavoriteIds(new Set())
       setSeenIds(new Set())
       setHealthyStatus(null)
@@ -308,7 +353,6 @@ function SearchFlow() {
           keyword: searchKeyword,
           taste: tasteRef.current,
           limit: 10,
-          excludeFastFood: noFastFoodRef.current,
         })
         setDisplayPlaces(ranked)
         setSeenIds(new Set(ranked.map((p) => p.id)))
@@ -342,7 +386,6 @@ function SearchFlow() {
     searchAbortRef.current?.abort()
     const ctrl = new AbortController()
     searchAbortRef.current = ctrl
-    seedOilBoostRef.current = false
     setLoading(true)
     setError(null)
 
@@ -375,7 +418,6 @@ function SearchFlow() {
                 taste,
                 limit: slots + 15,
                 excludeIds: nextSeen,
-                excludeFastFood: noFastFood,
               }).slice(0, slots)
           : []
 
@@ -392,7 +434,7 @@ function SearchFlow() {
         setScrollToResultsKey((k) => k + 1)
       }
     }
-  }, [city, cuisines, dietary, keyword, taste, displayPlaces, favoriteIds, seenIds, rawPlaces, noFastFood, loadRestaurantPool])
+  }, [city, cuisines, dietary, keyword, taste, displayPlaces, favoriteIds, seenIds, rawPlaces, loadRestaurantPool])
 
   useEffect(() => {
     if (!city) return
@@ -420,7 +462,6 @@ function SearchFlow() {
     setResolvingLocation(false)
     poolRef.current = []
     setRawPlaces([])
-    schedulePrefetch(selection.bounds)
     setParams((prev) => {
       const next = new URLSearchParams(prev)
       next.set('city', selection.label)
@@ -512,7 +553,6 @@ function SearchFlow() {
     healthyPoolRef.current = []
     prefetchPromiseRef.current = null
     autoRanRef.current = false
-    seedOilBoostRef.current = false
     setCityPickedByUser(false)
     setParams(new URLSearchParams(), { replace: true })
   }, [setParams])
@@ -595,7 +635,6 @@ function SearchFlow() {
           showSeedOil={dietary.includes('no_seed_oils') || healthyMode}
           openNowOnly={openNowOnly}
           hasWebsiteOnly={hasWebsiteOnly}
-          noFastFood={noFastFood}
           ratingsMap={ratingsMap}
           ratingsLoading={ratingsLoading}
           seedOilMap={seedOilMap}
@@ -614,7 +653,6 @@ function SearchFlow() {
           onSearchAgain={() => void searchAgain()}
           onToggleOpenNow={() => setOpenNowOnly((v) => !v)}
           onToggleWebsite={() => setHasWebsiteOnly((v) => !v)}
-          onToggleNoFastFood={() => setNoFastFood((v) => !v)}
           lovedIds={lovedIds}
           shortlistedIds={shortlistedIds}
           shareMessage={shareMessage}

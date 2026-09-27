@@ -33,6 +33,18 @@ describe('extractHealthySignals', () => {
     const salmon = extractHealthySignals('Grilled salmon', 'listing')
     expect(healthySignalScore(clean)).toBeGreaterThan(healthySignalScore(salmon))
   })
+
+  it('does not treat negated sourcing language as positive evidence', () => {
+    const signals = extractHealthySignals(
+      'Not organic and not grass-fed, but cooked with avocado oil and no seed oils.',
+      'yelp_review',
+    )
+    expect(signals.map((signal) => signal.id)).toEqual(
+      expect.arrayContaining(['avocado_oil', 'no_seed_oils']),
+    )
+    expect(signals.map((signal) => signal.id)).not.toContain('organic')
+    expect(signals.map((signal) => signal.id)).not.toContain('grass_fed')
+  })
 })
 
 describe('healthyQualityTier', () => {

@@ -200,6 +200,8 @@ function tasteBoost(place: Restaurant, taste: TasteProfile): { points: number; r
     const w = taste.cuisineWeights[c] ?? 0
     if (w > 0) {
       points += Math.min(12, w * 3)
+    } else if (w < 0) {
+      points += Math.max(-6, w * 2)
     }
   }
 
@@ -226,6 +228,10 @@ function tasteBoost(place: Restaurant, taste: TasteProfile): { points: number; r
   const strong = place.cuisines.filter((c) => (taste.cuisineWeights[c] ?? 0) >= 2)
   if (strong.length) {
     reasons.push(`Matches cuisines you tend to enjoy (${strong.slice(0, 2).join(', ')})`)
+  }
+  const avoided = place.cuisines.filter((c) => (taste.cuisineWeights[c] ?? 0) <= -2)
+  if (avoided.length) {
+    reasons.push(`Lower match for cuisines you often skip (${avoided.slice(0, 2).join(', ')})`)
   }
 
   return { points, reasons }

@@ -81,11 +81,34 @@ function haversineKm(a: LatLng, b: LatLng): number {
   return 2 * R * Math.asin(Math.sqrt(h))
 }
 
-function cacheKey(city: CitySelection): string {
+function stableHash(input: string): string {
+  let hash = 2166136261
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i)
+    hash = Math.imul(hash, 16777619)
+  }
+  return (hash >>> 0).toString(36)
+}
+
+export function healthySearchCacheKey(
+  city: CitySelection,
+  selectedCuisines: CuisineId[],
+  dietary: DietaryId[],
+  keyword: string | undefined,
+  taste: TasteProfile,
+): string {
   const b = [city.bounds.south, city.bounds.west, city.bounds.north, city.bounds.east]
     .map((n) => n.toFixed(3))
     .join(',')
-  return `healthySearch:v2:${utcDayKey()}:${b}`
+  const criteria = JSON.stringify({
+    cuisines: [...selectedCuisines].sort(),
+    dietary: [...dietary].sort(),
+    keyword: keyword?.trim().toLowerCase() ?? '',
+    loved: taste.loved.map((place) => place.id || place.name.toLowerCase()).sort(),
+    skipped: taste.skipped.map((place) => place.id || place.name.toLowerCase()).sort(),
+    cuisineWeights: Object.entries(taste.cuisineWeights).sort(([a], [b]) => a.localeCompare(b)),
+  })
+  return `healthySearch:v3:${utcDayKey()}:${b}:${stableHash(criteria)}`
 }
 
 function normalizeName(s: string): string {
@@ -356,16 +379,7 @@ export function attachSeedOilSignals(
   return places.map((place) => {
     const info = seedOilByPlaceId[place.id]
     if (!info) return place
-    const extra = `${info.grade ?? ''} ${info.cookingOil ?? ''}`
-    const incoming = extractHealthySignals(extra, 'seed_oil')
-    if (info.grade && /A|B/i.test(info.grade)) {
-      incoming.push({
-        id: 'no_seed_oils',
-        label: 'No seed oils',
-        source: 'seed_oil',
-        quote: info.cookingOil || `Seed Oil Tracker grade ${info.grade}`,
-      })
-    }
+    const incoming = extractHealthySignals(info.cookingOil ?? '', 'seed_oil')
     if (!incoming.length) return place
     const signals = mergeSignals(place.signals ?? [], incoming)
     return { ...place, signals, evidenceQuote: evidenceLine(signals) ?? place.evidenceQuote }
@@ -419,7 +433,13 @@ export async function runHealthyHunt(opts: {
   signal?: AbortSignal
   onProgress?: (update: HealthySearchProgress) => void
 }): Promise<{ displayed: RankedRestaurant[]; pool: RankedRestaurant[] }> {
-  const key = cacheKey(opts.city)
+  const key = healthySearchCacheKey(
+    opts.city,
+    opts.selectedCuisines,
+    opts.dietary,
+    opts.keyword,
+    opts.taste,
+  )
   const cached = readCache<{ displayed: RankedRestaurant[]; pool: RankedRestaurant[] }>(key)
   if (cached?.displayed?.length) {
     opts.onProgress?.({ status: 'Loaded saved healthy search for today.', places: cached.displayed })

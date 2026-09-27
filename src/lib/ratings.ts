@@ -26,6 +26,54 @@ export type PlaceRatings = {
   price: PriceRange
 }
 
+export function ratingQualityAdjustment(ratings: PlaceRatings | null | undefined): {
+  points: number
+  reason?: string
+} {
+  if (!ratings) return { points: 0 }
+
+  const sources = [ratings.google, ratings.yelp, ratings.tripadvisor].filter(
+    (source) => source.rating != null,
+  )
+  if (!sources.length) return { points: 0 }
+
+  const priorRating = 4.0
+  const priorReviews = 40
+  let weighted = 0
+  let weightTotal = 0
+  let totalReviews = 0
+
+  for (const source of sources) {
+    const reviews = Math.max(1, source.reviewCount ?? 10)
+    const adjusted =
+      ((source.rating ?? priorRating) * reviews + priorRating * priorReviews) /
+      (reviews + priorReviews)
+    const weight = 0.5 + Math.min(1, Math.log10(reviews + 1) / 3)
+    weighted += adjusted * weight
+    weightTotal += weight
+    totalReviews += source.reviewCount ?? 0
+  }
+
+  const quality = weightTotal > 0 ? weighted / weightTotal : priorRating
+  let points = Math.round((quality - priorRating) * 12)
+  if (quality >= 4.35 && totalReviews >= 100) points += 1
+  points = Math.max(-6, Math.min(9, points))
+
+  if (points >= 3) {
+    return {
+      points,
+      reason: `Strong public ratings across ${sources.length} review source${sources.length === 1 ? '' : 's'}`,
+    }
+  }
+  if (points <= -3) {
+    return {
+      points,
+      reason: `Mixed public ratings across ${sources.length} review source${sources.length === 1 ? '' : 's'}`,
+    }
+  }
+  return { points }
+}
+
 const CACHE_VERSION = 'v8'
 
 function cacheKey(place: Restaurant, cityLabel: string, source: string): string {

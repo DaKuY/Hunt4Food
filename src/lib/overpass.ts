@@ -32,14 +32,14 @@ function buildAreaQuery(bounds: MapBounds, includeJuiceShops = false): string {
   if (!includeJuiceShops) {
     return `
 [out:json][timeout:${QUERY_TIMEOUT_SEC}];
-nwr["amenity"~"^(restaurant|cafe|fast_food|ice_cream|food_court)$"](${bbox});
+nwr["amenity"~"^(restaurant|cafe|ice_cream|food_court)$"](${bbox});
 out center tags ${RESULT_CAP};
 `.trim()
   }
   return `
 [out:json][timeout:${QUERY_TIMEOUT_SEC}];
 (
-  nwr["amenity"~"^(restaurant|cafe|fast_food|ice_cream|food_court)$"](${bbox});
+  nwr["amenity"~"^(restaurant|cafe|ice_cream|food_court)$"](${bbox});
   nwr["shop"~"^(juice|health_food)$"](${bbox});
 );
 out center tags ${RESULT_CAP};
@@ -103,7 +103,7 @@ function cacheKey(bounds: MapBounds, includeJuiceShops = false): string {
   const b = [bounds.south, bounds.west, bounds.north, bounds.east]
     .map((n) => n.toFixed(3))
     .join(',')
-  return `overpass:v5:area:${includeJuiceShops ? 'healthy:' : ''}${b}`
+  return `overpass:v6:area:${includeJuiceShops ? 'healthy:' : ''}${b}`
 }
 
 function isAbortError(e: unknown): boolean {
@@ -152,7 +152,18 @@ async function fetchMirror(mirror: string, query: string, signal?: AbortSignal):
 }
 
 async function fetchFromMirrorsParallel(query: string, signal?: AbortSignal): Promise<Restaurant[]> {
-  return Promise.any(MIRRORS.map((mirror) => fetchMirror(mirror, query, signal)))
+  const mirrors = MIRRORS.slice(0, 2)
+  const controllers = mirrors.map(() => new AbortController())
+  const onAbort = () => controllers.forEach((controller) => controller.abort())
+  signal?.addEventListener('abort', onAbort, { once: true })
+  try {
+    return await Promise.any(
+      mirrors.map((mirror, index) => fetchMirror(mirror, query, controllers[index]!.signal)),
+    )
+  } finally {
+    controllers.forEach((controller) => controller.abort())
+    signal?.removeEventListener('abort', onAbort)
+  }
 }
 
 async function fetchFromMirrorsSequential(query: string, signal?: AbortSignal): Promise<Restaurant[]> {
