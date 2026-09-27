@@ -103,6 +103,7 @@ export type HealthySignal = {
 export type RankedRestaurant = Restaurant & {
   score: number
   baseScore?: number
+  seedOilAdjustment?: number
   reasons: string[]
   distanceKm: number
   lane?: HealthyLane
