@@ -28,6 +28,15 @@ function doGet(e) {
   var wantDishes = p.dishes === '1' || p.dishes === 'true';
   var googleKey = String(p.googleKey || '');
 
+  // The web app is public ("Anyone"), so anybody holding the URL spends these
+  // API keys. Serve repeats from cache and cap fresh upstream work per minute.
+  var cacheKey = responseCacheKey_(source, p, lat, lon);
+  var cached = cacheKey ? readCachedResponse_(cacheKey) : null;
+  if (cached) return respond_(cached, callback);
+  if (overRateLimit_()) {
+    return respond_(JSON.stringify({ error: 'Proxy rate limit reached, try again shortly', rating: null, reviewCount: null, url: null }), callback);
+  }
+
   var result;
   try {
     if (source === 'yelp') {
@@ -48,12 +57,65 @@ function doGet(e) {
   }
 
   var json = JSON.stringify(result);
+  if (cacheKey && result && !result.error) writeCachedResponse_(cacheKey, json);
+  return respond_(json, callback);
+}
+
+var RATE_LIMIT_PER_MINUTE = 120;
+var RESPONSE_CACHE_SECONDS = 6 * 60 * 60;
+
+function respond_(json, callback) {
   if (callback) {
     return ContentService.createTextOutput(callback + '(' + json + ')').setMimeType(
       ContentService.MimeType.JAVASCRIPT,
     );
   }
   return ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);
+}
+
+/** Cache key for identical lookups; the caller's googleKey never changes the answer. */
+function responseCacheKey_(source, p, lat, lon) {
+  if (!source) return '';
+  var parts = [
+    'v1', source, String(p.name || '').toLowerCase(), String(p.city || '').toLowerCase(),
+    isNaN(lat) ? '' : lat.toFixed(3), isNaN(lon) ? '' : lon.toFixed(3),
+    String(p.dishes || ''), String(p.radius || ''), String(p.ids || ''), String(p.names || '').toLowerCase(),
+  ];
+  var digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, parts.join('|'), Utilities.Charset.UTF_8);
+  return 'resp:' + Utilities.base64EncodeWebSafe(digest);
+}
+
+function readCachedResponse_(key) {
+  try {
+    return CacheService.getScriptCache().get(key);
+  } catch (e) {
+    return null;
+  }
+}
+
+function writeCachedResponse_(key, json) {
+  try {
+    if (json.length < 90000) CacheService.getScriptCache().put(key, json, RESPONSE_CACHE_SECONDS);
+  } catch (e) {
+    // Cache is best-effort.
+  }
+}
+
+/** Global cap on fresh (uncached) lookups per minute across all callers. */
+function overRateLimit_() {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(2000)) return false;
+  try {
+    var cache = CacheService.getScriptCache();
+    var key = 'rl:' + Math.floor(Date.now() / 60000);
+    var count = Number(cache.get(key) || 0) + 1;
+    cache.put(key, String(count), 120);
+    return count > RATE_LIMIT_PER_MINUTE;
+  } catch (e) {
+    return false;
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function fetchYelp_(name, city, lat, lon, wantDishes) {

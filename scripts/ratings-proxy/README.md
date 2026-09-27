@@ -38,3 +38,13 @@ TripAdvisor ratings use DuckDuckGo search snippets (TripAdvisor blocks direct sc
 The same web app also serves `source=healthyDiscover` and `source=healthyReviews` (Yelp Fusion search + review excerpts, DuckDuckGo OpenTable, TripAdvisor, and Google snippets, optional server-side Google Places). Existing `yelp` / `google` / `tripadvisor` responses are unchanged.
 
 **After updating `Code.gs`, redeploy** (**Deploy → Manage deployments → Edit → New version**) so Healthy review search can use the new endpoints. The `/exec` URL stays the same. Until you redeploy, Healthy still ranks OpenStreetMap + known chains + Seed Oil Tracker, without live review mining.
+
+## Abuse limits
+
+The web app must be public ("Anyone") for the browser to call it, so anyone with the `/exec` URL can use it. To protect your Yelp/Google keys, `Code.gs`:
+
+- caches successful answers for 6 hours (repeat lookups cost no API calls),
+- allows at most 120 uncached lookups per minute across all callers (`RATE_LIMIT_PER_MINUTE`),
+- only accepts a plain identifier as the JSONP `callback`.
+
+These take effect only after you redeploy: **Deploy → Manage deployments → Edit → New version**.
