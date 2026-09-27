@@ -60,4 +60,58 @@ describe('rankRestaurants', () => {
 
     expect(ranked.map((restaurant) => restaurant.id)).toEqual(['true-food'])
   })
+
+  it('lets strong provider quality break otherwise-close candidate ties', () => {
+    const ranked = rankRestaurants(
+      [
+        place({
+          id: 'strong',
+          name: 'Strong Steakhouse',
+          cuisines: ['steak_house'],
+          discoveryTerms: ['Steak'],
+          providerRating: 4.8,
+          providerReviewCount: 1200,
+        }),
+        place({
+          id: 'unknown',
+          name: 'Unknown Steakhouse',
+          cuisines: ['steak_house'],
+          discoveryTerms: ['Steak'],
+        }),
+      ],
+      {
+        center: { lat: 32.95, lon: -96.99 },
+        selectedCuisines: ['steak'],
+        dietary: [],
+        taste,
+        limit: 10,
+      },
+    )
+
+    expect(ranked[0]?.id).toBe('strong')
+    expect(ranked[0]?.ratingAdjustment).toBeGreaterThan(0)
+  })
+
+  it('uses provider discovery terms for keyword-only searches', () => {
+    const ranked = rankRestaurants(
+      [
+        place({
+          id: 'provider-match',
+          name: 'Neighborhood Kitchen',
+          cuisines: ['restaurant'],
+          discoveryTerms: ['grass fed steak'],
+        }),
+      ],
+      {
+        center: { lat: 32.95, lon: -96.99 },
+        selectedCuisines: [],
+        dietary: [],
+        keyword: 'grass fed steak',
+        taste,
+        limit: 10,
+      },
+    )
+
+    expect(ranked.map((restaurant) => restaurant.id)).toEqual(['provider-match'])
+  })
 })

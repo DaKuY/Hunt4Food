@@ -68,6 +68,9 @@ export type Restaurant = {
   amenity?: string
   cuisineRaw?: string
   yelpId?: string
+  discoveryTerms?: string[]
+  providerRating?: number
+  providerReviewCount?: number
 }
 
 export type HealthyLane = 'clean_cooking' | 'smoothie' | 'protein'

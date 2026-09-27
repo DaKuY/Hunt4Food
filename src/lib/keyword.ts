@@ -19,7 +19,7 @@ export function normalizeKeyword(raw: string): string {
 }
 
 export function placeSearchBlob(place: Restaurant): string {
-  return `${place.name} ${place.cuisineRaw ?? ''} ${place.cuisines.join(' ')} ${place.amenity ?? ''}`.toLowerCase()
+  return `${place.name} ${place.cuisineRaw ?? ''} ${place.cuisines.join(' ')} ${place.discoveryTerms?.join(' ') ?? ''} ${place.amenity ?? ''}`.toLowerCase()
 }
 
 export function keywordBoost(

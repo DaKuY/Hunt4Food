@@ -19,6 +19,7 @@ import { coordsToCitySelection } from './lib/geocode'
 import { ensureCacheGeneration, pruneExpiredCache } from './lib/storage'
 import { attachSeedOilSignals, pickHealthyLanes, runHealthyHunt } from './lib/healthySearch'
 import { fetchRestaurants } from './lib/overpass'
+import { discoverProviderCandidates, mergeProviderCandidates } from './lib/providerDiscovery'
 import { rankRestaurants } from './lib/rank'
 import { ratingQualityAdjustment } from './lib/ratings'
 import { seedOilGradeScore } from './lib/seedOil'
@@ -356,27 +357,53 @@ function SearchFlow() {
         })
         setDisplayPlaces(ranked)
         setSeenIds(new Set(ranked.map((p) => p.id)))
-        setLoading(false)
+        if (ranked.length) setLoading(false)
+        return ranked
       }
 
-      if (poolRef.current.length) {
-        rankPool(poolRef.current)
+      const providerPromise = discoverProviderCandidates(
+        selection,
+        food,
+        searchKeyword,
+        ctrl.signal,
+      ).catch(() => [])
+
+      let osmPlaces = poolRef.current
+      let osmFailed = false
+
+      if (osmPlaces.length) {
+        rankPool(osmPlaces)
+      } else {
+        setLoading(true)
+        setDisplayPlaces([])
+        try {
+          osmPlaces = await loadRestaurantPool(selection.bounds, ctrl.signal)
+          if (ctrl.signal.aborted) return
+          if (osmPlaces.length) rankPool(osmPlaces)
+        } catch (e) {
+          if ((e as Error).name === 'AbortError' || ctrl.signal.aborted) return
+          osmFailed = true
+          osmPlaces = []
+        }
+      }
+
+      const providerCandidates = await providerPromise
+      if (ctrl.signal.aborted) return
+
+      const merged = mergeProviderCandidates(osmPlaces, providerCandidates, selection.label)
+      if (merged.length) {
+        rankPool(merged)
         return
       }
 
-      setLoading(true)
+      setRawPlaces([])
       setDisplayPlaces([])
-      try {
-        const raw = await loadRestaurantPool(selection.bounds, ctrl.signal)
-        if (ctrl.signal.aborted) return
-        rankPool(raw)
-      } catch (e) {
-        if ((e as Error).name === 'AbortError' || ctrl.signal.aborted) return
-        setError('Could not reach OpenStreetMap right now. Try again in a minute, or use Google / Yelp below.')
-        setRawPlaces([])
-        setDisplayPlaces([])
-        setLoading(false)
-      }
+      setLoading(false)
+      setError(
+        osmFailed
+          ? 'Could not reach restaurant data providers right now. Try again in a minute, or use Google / Yelp below.'
+          : 'No matching restaurants were found in this area. Try a broader search or use Google / Yelp below.',
+      )
     },
     [loadRestaurantPool],
   )
