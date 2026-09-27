@@ -111,7 +111,7 @@ export function formatDistanceMiles(distanceKm: number): string {
 
 function matchesCuisine(place: Restaurant, cuisineId: CuisineId): boolean {
   const opt = cuisineById(cuisineId)
-  const blob = `${place.cuisineRaw ?? ''} ${place.cuisines.join(' ')} ${place.name} ${place.amenity ?? ''}`.toLowerCase()
+  const blob = `${place.cuisineRaw ?? ''} ${place.cuisines.join(' ')} ${place.discoveryTerms?.join(' ') ?? ''} ${place.name} ${place.amenity ?? ''}`.toLowerCase()
   return (
     opt.osmTags.some((t) => place.cuisines.includes(t) || blob.includes(t.replace(/_/g, ' '))) ||
     opt.keywords.some((k) => blob.includes(k.toLowerCase()))
@@ -237,6 +237,27 @@ function tasteBoost(place: Restaurant, taste: TasteProfile): { points: number; r
   return { points, reasons }
 }
 
+function providerQualityBoost(place: Restaurant): { points: number; reasons: string[] } {
+  if (place.providerRating == null) return { points: 0, reasons: [] }
+
+  const reviews = Math.max(1, place.providerReviewCount ?? 10)
+  const priorRating = 4.0
+  const priorReviews = 40
+  const adjusted =
+    (place.providerRating * reviews + priorRating * priorReviews) /
+    (reviews + priorReviews)
+
+  let points = Math.round((adjusted - priorRating) * 10)
+  if (adjusted >= 4.35 && reviews >= 100) points += 1
+  points = Math.max(-5, Math.min(8, points))
+
+  const reasons: string[] = []
+  if (points >= 3) reasons.push('Strong provider rating with meaningful review volume')
+  else if (points <= -3) reasons.push('Provider ratings are mixed')
+
+  return { points, reasons }
+}
+
 function completeness(place: Restaurant): { points: number; reasons: string[] } {
   let points = 0
   const reasons: string[] = []
@@ -335,6 +356,10 @@ export function rankRestaurants(
     const complete = completeness(place)
     score += complete.points
     reasons.push(...complete.reasons)
+
+    const providerQuality = providerQualityBoost(place)
+    score += providerQuality.points
+    reasons.push(...providerQuality.reasons)
 
     const distanceKm = haversineKm(opts.center, { lat: place.lat, lon: place.lon })
     score += Math.max(0, 12 - distanceKm * 1.5)
