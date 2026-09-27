@@ -21,7 +21,7 @@ export function usePlaceDishes(
   const [map, setMap] = useState<Record<string, string[]>>(instant)
   const placesRef = useRef(places)
   placesRef.current = places
-  const placeIds = places.map((p) => p.id).join(',')
+  const placeIds = places.map((p) => p.id).sort().join(',')
 
   useEffect(() => {
     if (!enabled || !placeIds) {
