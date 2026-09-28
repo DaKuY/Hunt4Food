@@ -9,7 +9,7 @@ import type {
 export const HEALTHY_LANE_LABELS: Record<HealthyLane, string> = {
   clean_cooking: 'Clean cooking',
   smoothie: 'Smoothie shops',
-  protein: 'Healthy salmon & chicken',
+  protein: 'Salmon, steak & chicken',
 }
 
 export const HEALTHY_SIGNAL_DEFS: Array<{
@@ -56,6 +56,12 @@ export const HEALTHY_SIGNAL_DEFS: Array<{
     patterns: [/locally sourced/i, /local farms?/i, /farm[-\s]?to[-\s]?table/i, /seasonal ingredients?/i],
   },
   { id: 'salmon', label: 'Salmon', patterns: [/\bsalmon\b/i] },
+  {
+    id: 'steak',
+    label: 'Steak',
+    // Leading \b keeps "cheesesteak" out; steak_house is the OSM cuisine tag.
+    patterns: [/\bsteak(?:s|house|_house)?\b/i, /\bfilet mignon\b/i, /\brib[-\s]?eye\b/i, /\bsirloin\b/i, /\bnew york strip\b/i],
+  },
   { id: 'chicken_breast', label: 'Chicken breast', patterns: [/chicken breast/i, /grilled chicken/i] },
   {
     id: 'smoothie',
@@ -82,6 +88,8 @@ export const KNOWN_HEALTHY_CHAINS: KnownHealthyChain[] = [
   { name: 'Freshii', lane: 'clean_cooking', aliases: ['freshii'] },
   { name: 'Dig Inn', lane: 'clean_cooking', aliases: ['dig inn'] },
   { name: 'Lyfe Kitchen', lane: 'clean_cooking', aliases: ['lyfe kitchen'] },
+  { name: 'Snap Kitchen', lane: 'clean_cooking', aliases: ['snap kitchen'] },
+  { name: 'Salata', lane: 'clean_cooking', aliases: ['salata'] },
   { name: 'Tropical Smoothie Cafe', lane: 'smoothie', aliases: ['tropical smoothie'] },
   { name: 'Pure Green', lane: 'smoothie', aliases: ['pure green'] },
   { name: 'Smoothie King', lane: 'smoothie', aliases: ['smoothie king'] },
@@ -90,6 +98,8 @@ export const KNOWN_HEALTHY_CHAINS: KnownHealthyChain[] = [
   { name: 'Robeks', lane: 'smoothie', aliases: ['robeks'] },
   { name: 'Jamba', lane: 'smoothie', aliases: ['jamba', 'jamba juice'] },
   { name: 'Playa Bowls', lane: 'smoothie', aliases: ['playa bowls'] },
+  { name: 'Nekter Juice Bar', lane: 'smoothie', aliases: ['nekter'] },
+  { name: 'Grabbagreen', lane: 'smoothie', aliases: ['grabbagreen'] },
 ]
 
 const KNOWN_QUALITY_FALLBACKS = [
@@ -123,6 +133,7 @@ const HEALTHY_SIGNAL_WEIGHTS: Record<HealthySignalId, number> = {
   wild_caught: 24,
   locally_sourced: 18,
   salmon: 14,
+  steak: 14,
   chicken_breast: 9,
   smoothie: 5,
 }
@@ -131,11 +142,15 @@ function normalizeName(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
 }
 
+/**
+ * Whole-word alias match: "Cavatappi" is not Cava, and a place simply named
+ * "Green" is not Pure Green.
+ */
 export function matchKnownChain(place: Restaurant): KnownHealthyChain | null {
-  const name = normalizeName(place.name)
-  if (!name) return null
+  const name = ` ${normalizeName(place.name)} `
+  if (!name.trim()) return null
   for (const chain of KNOWN_HEALTHY_CHAINS) {
-    if (chain.aliases.some((alias) => name.includes(alias) || alias.includes(name))) {
+    if (chain.aliases.some((alias) => name.includes(` ${normalizeName(alias)} `))) {
       return chain
     }
   }
@@ -165,20 +180,23 @@ export function healthySignalScore(signals: HealthySignal[]): number {
 export function isQualityWholeFoodFallback(place: Restaurant, signals: HealthySignal[]): boolean {
   if (isKnownQualityFallback(place)) return true
   const ids = new Set(signals.map((signal) => signal.id))
-  if (ids.has('salmon') || ids.has('wild_caught') || ids.has('chicken_breast')) return true
+  if (ids.has('salmon') || ids.has('steak') || ids.has('wild_caught') || ids.has('chicken_breast')) return true
 
+  // No bare "grill": it pulls in sports bars and burger joints.
   const blob = listingBlob(place).toLowerCase()
-  return /\b(seafood|salmon|fish|sushi|sashimi|steak|steakhouse|new american|modern american|bistro|grill|mediterranean)\b/.test(blob)
+  return /\b(seafood|salmon|fish|sushi|sashimi|steak|steakhouse|steak_house|new american|modern american|bistro|mediterranean)\b/.test(blob)
 }
 
 /**
- * Lower is better. Healthy search fills explicit clean-food evidence first,
- * then quality whole-food restaurants, then weaker healthy-ish matches.
+ * Lower is better. Known healthy brands (True Food Kitchen, Tropical Smoothie
+ * Cafe, Pure Green…) and explicit clean-food evidence (grass-fed, no seed oils…)
+ * come first; then salmon/steak/seafood whole-food restaurants; then generic
+ * smoothie or juice spots; then everything else.
  */
 export function healthyQualityTier(place: Restaurant, signals: HealthySignal[]): number {
-  if (matchKnownChain(place)?.lane === 'clean_cooking' || hasPrimaryHealthyEvidence(signals)) return 0
+  if (matchKnownChain(place) || hasPrimaryHealthyEvidence(signals)) return 0
   if (isQualityWholeFoodFallback(place, signals)) return 1
-  if (matchKnownChain(place) || signals.some((signal) => signal.id === 'smoothie')) return 2
+  if (signals.some((signal) => signal.id === 'smoothie')) return 2
   return 3
 }
 
@@ -243,11 +261,11 @@ export function assignHealthyLane(
   const ids = new Set(signals.map((s) => s.id))
   if (ids.has('smoothie') && !hasPrimaryHealthyEvidence(signals)) return 'smoothie'
   if (hasPrimaryHealthyEvidence(signals)) return 'clean_cooking'
-  if (ids.has('salmon') || ids.has('chicken_breast') || ids.has('wild_caught')) return 'protein'
+  if (ids.has('salmon') || ids.has('steak') || ids.has('chicken_breast') || ids.has('wild_caught')) return 'protein'
 
   const blob = listingBlob(place).toLowerCase()
   if (/smoothie|juice|açaí|acai/.test(blob)) return 'smoothie'
-  if (/salmon|chicken|poke|seafood|sushi|fish/.test(blob)) return 'protein'
+  if (/salmon|steak|chicken|poke|seafood|sushi|fish/.test(blob)) return 'protein'
   return 'clean_cooking'
 }
 
@@ -267,8 +285,8 @@ export function healthyInstantBoost(place: Restaurant): {
     points += 45
     reasons.push(`Known clean-food restaurant like ${chain.name}`)
   } else if (chain) {
-    points += 12
-    reasons.push(`Known healthy option like ${chain.name}`)
+    points += 35
+    reasons.push(`Known healthy smoothie & bowl spot like ${chain.name}`)
   }
 
   if (isKnownQualityFallback(place)) {

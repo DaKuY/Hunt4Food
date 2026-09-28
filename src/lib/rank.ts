@@ -1,4 +1,5 @@
 import { cuisineById } from '../data/cuisines'
+import { matchKnownChain } from './healthySignals'
 import { keywordBoost } from './keyword'
 import { seedOilGradeScore, type SeedOilInfo } from './seedOil'
 import type {
@@ -179,17 +180,34 @@ function chainNameMatches(name: string, alias: string): boolean {
   )
 }
 
+/** Counter-service smoothie/juice/salad spots are the healthy lane, not fast food. */
+const HEALTHY_COUNTER_CATEGORIES = new Set([
+  'juice',
+  'smoothie',
+  'smoothies',
+  'juice_bar',
+  'juicebars',
+  'juice_shop',
+  'acai',
+  'acaibowls',
+  'salad',
+  'salad_shop',
+])
+
 export function isFastFood(place: Restaurant): boolean {
-  if (normalizedCategory(place.amenity ?? '') === 'fast_food') return true
+  const name = normalizeRestaurantName(place.name)
+  if (FAST_FOOD_CHAIN_ALIASES.some((alias) => chainNameMatches(name, alias))) return true
+  // OSM and Google tag Tropical Smoothie Cafe, Pure Green, etc. as fast food.
+  if (matchKnownChain(place)) return false
 
   const categories = [
     ...place.cuisines,
     ...(place.cuisineRaw ?? '').split(/[;,]/),
   ].map(normalizedCategory)
-  if (categories.some((category) => FAST_FOOD_CATEGORY_VALUES.has(category))) return true
+  if (categories.some((category) => HEALTHY_COUNTER_CATEGORIES.has(category))) return false
 
-  const name = normalizeRestaurantName(place.name)
-  return FAST_FOOD_CHAIN_ALIASES.some((alias) => chainNameMatches(name, alias))
+  if (normalizedCategory(place.amenity ?? '') === 'fast_food') return true
+  return categories.some((category) => FAST_FOOD_CATEGORY_VALUES.has(category))
 }
 
 function tasteBoost(place: Restaurant, taste: TasteProfile): { points: number; reasons: string[] } {
