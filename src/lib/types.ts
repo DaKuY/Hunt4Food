@@ -85,6 +85,7 @@ export type HealthySignalId =
   | 'wild_caught'
   | 'locally_sourced'
   | 'salmon'
+  | 'steak'
   | 'chicken_breast'
   | 'smoothie'
 

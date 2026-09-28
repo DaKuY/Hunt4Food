@@ -2,6 +2,7 @@ import { jsonpGet, ratingsProxyUrl } from './ratingsProxy'
 import { cacheTtlUntilEndOfUtcDay, readCache, utcDayKey, writeCache } from './storage'
 import { seedSourceRating } from './ratings'
 import { googlePriceLevel, yelpPriceLevel } from './priceRange'
+import { discoverHealthyCandidates, mergeProviderCandidates, type ProviderCandidate } from './providerDiscovery'
 import { rankRestaurants } from './rank'
 import {
   assignHealthyLane,
@@ -12,6 +13,7 @@ import {
   healthyQualityTier,
   healthySignalScore,
   isQualityWholeFoodFallback,
+  matchKnownChain,
   mergeSignals,
 } from './healthySignals'
 import type {
@@ -108,7 +110,7 @@ export function healthySearchCacheKey(
     skipped: taste.skipped.map((place) => place.id || place.name.toLowerCase()).sort(),
     cuisineWeights: Object.entries(taste.cuisineWeights).sort(([a], [b]) => a.localeCompare(b)),
   })
-  return `healthySearch:v3:${utcDayKey()}:${b}:${stableHash(criteria)}`
+  return `healthySearch:v4:${utcDayKey()}:${b}:${stableHash(criteria)}`
 }
 
 function normalizeName(s: string): string {
@@ -248,20 +250,48 @@ function scoreHealthyPlace(
   }
 }
 
+/**
+ * Best-first by quality tier, then score, while keeping the list varied:
+ * one location per healthy chain and at most half the list from one lane
+ * (clean cooking / smoothies / salmon-steak-chicken). Anything deferred by
+ * those rules still fills remaining slots, in order.
+ */
 export function pickHealthyLanes(
   ranked: RankedRestaurant[],
   limit = 10,
   excludeIds?: Iterable<string>,
 ): RankedRestaurant[] {
   const exclude = excludeIds ? new Set(excludeIds) : new Set<string>()
-  return ranked
+  const ordered = ranked
     .filter((place) => !exclude.has(place.id))
     .sort((a, b) => {
       const tierDiff = healthyQualityTier(a, a.signals ?? []) - healthyQualityTier(b, b.signals ?? [])
       if (tierDiff !== 0) return tierDiff
       return b.score - a.score
     })
-    .slice(0, limit)
+
+  const laneCap = Math.max(1, Math.ceil(limit / 2))
+  const picked: RankedRestaurant[] = []
+  const deferred: RankedRestaurant[] = []
+  const chainsUsed = new Set<string>()
+  const laneCounts = new Map<string, number>()
+  for (const place of ordered) {
+    if (picked.length >= limit) break
+    const chain = matchKnownChain(place)?.name
+    const lane = place.lane ?? 'clean_cooking'
+    if ((chain && chainsUsed.has(chain)) || (laneCounts.get(lane) ?? 0) >= laneCap) {
+      deferred.push(place)
+      continue
+    }
+    if (chain) chainsUsed.add(chain)
+    laneCounts.set(lane, (laneCounts.get(lane) ?? 0) + 1)
+    picked.push(place)
+  }
+  for (const place of deferred) {
+    if (picked.length >= limit) break
+    picked.push(place)
+  }
+  return picked
 }
 
 async function fetchHealthyDiscover(
@@ -423,6 +453,23 @@ function rankHealthyPool(
   return withSnips.map((p) => scoreHealthyPlace(p, opts))
 }
 
+/**
+ * The search phrase ("Tropical Smoothie Cafe", "grass fed steak") is not
+ * evidence about the place, so keep it out of the categories that signals read.
+ */
+function mergeHealthyProviders(
+  pool: Restaurant[],
+  providers: ProviderCandidate[],
+  cityLabel: string,
+): Restaurant[] {
+  if (!providers.length) return pool
+  return mergeProviderCandidates(
+    pool,
+    providers.map((candidate) => ({ ...candidate, matchedTerm: '' })),
+    cityLabel,
+  )
+}
+
 export async function runHealthyHunt(opts: {
   city: CitySelection
   selectedCuisines: CuisineId[]
@@ -469,21 +516,33 @@ export async function runHealthyHunt(opts: {
   let snippets: HealthySnippet[] = []
 
   if (remaining() > 1500 && !opts.signal?.aborted) {
+    // Name searches (True Food Kitchen, Tropical Smoothie Cafe, grass-fed steak…)
+    // run alongside the review-mining proxy; either can fail independently.
+    const providerPromise = discoverHealthyCandidates(opts.city, opts.signal).catch(
+      () => [] as ProviderCandidate[],
+    )
     try {
-      const data = await fetchHealthyDiscover(opts.city)
+      const [data, providers] = await Promise.all([fetchHealthyDiscover(opts.city), providerPromise])
       if (!opts.signal?.aborted) {
         discovered = data.places ?? []
         snippets = data.snippets ?? []
+        pool = mergeHealthyProviders(pool, providers, opts.city.label)
         pool = mergeDiscoverIntoPool(pool, discovered, opts.city.label)
         ranked = rankHealthyPool(pool, rankOpts, discovered, snippets)
         displayed = pickHealthyLanes(ranked)
         opts.onProgress?.({
           status:
-            'Checking listings and reviews for grass-fed, no seed oils, avocado oil, organic sourcing, then salmon and quality whole-food fallbacks…',
+            'Checking True Food Kitchen–style spots, smoothie cafés, and reviews for grass-fed, no seed oils, avocado oil, then salmon and steak…',
           places: displayed,
         })
       }
     } catch {
+      const providers = await providerPromise
+      if (!opts.signal?.aborted && providers.length) {
+        pool = mergeHealthyProviders(pool, providers, opts.city.label)
+        ranked = rankHealthyPool(pool, rankOpts)
+        displayed = pickHealthyLanes(ranked)
+      }
       opts.onProgress?.({
         status: 'Review search is limited right now — showing the best non-fast-food healthy matches.',
         places: displayed,

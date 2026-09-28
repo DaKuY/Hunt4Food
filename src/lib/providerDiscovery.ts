@@ -118,7 +118,36 @@ export async function discoverProviderCandidates(
   keyword?: string,
   signal?: AbortSignal,
 ): Promise<ProviderCandidate[]> {
-  const terms = buildDiscoveryTerms(selectedCuisines, keyword)
+  return fetchProviderCandidates(city, buildDiscoveryTerms(selectedCuisines, keyword), signal)
+}
+
+/**
+ * Healthy mode searches Google/Yelp by name for the brands and dishes people
+ * actually mean by "healthy", since OSM often lacks them. /api/discover takes
+ * at most 3 terms per call.
+ */
+export const HEALTHY_DISCOVERY_TERM_GROUPS: string[][] = [
+  ['True Food Kitchen', 'Tropical Smoothie Cafe', 'Pure Green'],
+  ['grass fed steak', 'wild salmon', 'healthy bowls'],
+]
+
+export async function discoverHealthyCandidates(
+  city: CitySelection,
+  signal?: AbortSignal,
+): Promise<ProviderCandidate[]> {
+  const batches = await Promise.all(
+    HEALTHY_DISCOVERY_TERM_GROUPS.map((terms) =>
+      fetchProviderCandidates(city, terms, signal).catch(() => [] as ProviderCandidate[]),
+    ),
+  )
+  return batches.flat()
+}
+
+async function fetchProviderCandidates(
+  city: CitySelection,
+  terms: string[],
+  signal?: AbortSignal,
+): Promise<ProviderCandidate[]> {
   if (!terms.length) return []
 
   const cacheKey = [

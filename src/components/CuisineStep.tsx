@@ -70,11 +70,11 @@ export function CuisineStep({
         {healthyOn ? (
           <p className="healthy-helper">
             We check Google, Yelp, TripAdvisor, and OpenTable for grass-fed, clean oils, smoothie shops,
-            and healthy salmon or chicken. Mentions show on each listing.
+            and grass-fed steak, salmon, or chicken. Mentions show on each listing.
           </p>
         ) : (
           <p className="muted small">
-            True Food Kitchen-style cooking, smoothie shops, and healthy salmon or chicken options.
+            True Food Kitchen-style cooking, smoothie spots like Tropical Smoothie and Pure Green, and steak, salmon, or chicken options.
           </p>
         )}
       </div>

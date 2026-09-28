@@ -1,3 +1,4 @@
+import { KNOWN_HEALTHY_CHAINS } from './healthySignals'
 import { readCache, readStaleCache, writeCache } from './storage'
 import type { MapBounds, Restaurant } from './types'
 
@@ -26,7 +27,11 @@ type OverpassElement = {
   tags?: Record<string, string>
 }
 
-function buildAreaQuery(bounds: MapBounds, includeJuiceShops = false): string {
+const HEALTHY_CHAIN_NAME_PATTERN = KNOWN_HEALTHY_CHAINS.flatMap((chain) => chain.aliases)
+  .map((alias) => alias.replace(/[^a-z0-9 ]/gi, ''))
+  .join('|')
+
+export function buildAreaQuery(bounds: MapBounds, includeJuiceShops = false): string {
   const { south, west, north, east } = bounds
   const bbox = `${south},${west},${north},${east}`
   if (!includeJuiceShops) {
@@ -36,11 +41,15 @@ nwr["amenity"~"^(restaurant|cafe|ice_cream|food_court)$"](${bbox});
 out center tags ${RESULT_CAP};
 `.trim()
   }
+  // OSM files Tropical Smoothie Cafe, Pure Green, juice bars, etc. under
+  // amenity=fast_food, which the plain query skips.
   return `
 [out:json][timeout:${QUERY_TIMEOUT_SEC}];
 (
   nwr["amenity"~"^(restaurant|cafe|ice_cream|food_court)$"](${bbox});
   nwr["shop"~"^(juice|health_food)$"](${bbox});
+  nwr["amenity"="fast_food"]["name"~"${HEALTHY_CHAIN_NAME_PATTERN}",i](${bbox});
+  nwr["amenity"="fast_food"]["cuisine"~"juice|smoothie|salad|acai",i](${bbox});
 );
 out center tags ${RESULT_CAP};
 `.trim()
@@ -103,7 +112,7 @@ function cacheKey(bounds: MapBounds, includeJuiceShops = false): string {
   const b = [bounds.south, bounds.west, bounds.north, bounds.east]
     .map((n) => n.toFixed(3))
     .join(',')
-  return `overpass:v6:area:${includeJuiceShops ? 'healthy:' : ''}${b}`
+  return `overpass:v7:area:${includeJuiceShops ? 'healthy:' : ''}${b}`
 }
 
 function isAbortError(e: unknown): boolean {
