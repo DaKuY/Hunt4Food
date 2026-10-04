@@ -836,7 +836,14 @@ function Shell() {
 
   useEffect(() => {
     ensureCacheGeneration()
-    pruneExpiredCache()
+    // Pruning parses every cached entry; keep it off the startup path.
+    const idle = (window as Window & { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback
+    if (idle) {
+      idle(() => pruneExpiredCache())
+      return
+    }
+    const timer = window.setTimeout(pruneExpiredCache, 2000)
+    return () => window.clearTimeout(timer)
   }, [])
 
   function goHome() {

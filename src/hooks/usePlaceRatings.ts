@@ -41,42 +41,44 @@ export function usePlaceRatings(
     setMap(seedFromCache(list, cityLabel))
     setLoading(true)
 
-    void (async () => {
-      if (!opts?.skipGoogle) {
-        await mapPool(
-          list,
-          8,
-          async (place) => {
-            if (ctrl.signal.aborted) return
-            try {
-              const google = await fetchGoogleRating(place, cityLabel, ctrl.signal)
-              if (ctrl.signal.aborted) return
-              setMap((prev) => {
-                const base = prev[place.id] ?? emptyPlaceRatings(place, cityLabel)
-                return { ...prev, [place.id]: withPlacePrice({ ...base, google }) }
-              })
-            } catch {
-              // skip
-            }
-          },
-          ctrl.signal,
-        )
-      }
+    // Rating responses arrive one by one; each state update re-renders and
+    // re-sorts the result list, so apply them in small batches.
+    let pending: Array<[string, (base: PlaceRatings) => PlaceRatings]> = []
+    let flushTimer = 0
+    const flush = () => {
+      flushTimer = 0
+      if (ctrl.signal.aborted || !pending.length) return
+      const batch = pending
+      pending = []
+      setMap((prev) => {
+        const next = { ...prev }
+        const byId = new Map(list.map((place) => [place.id, place]))
+        for (const [id, apply] of batch) {
+          const place = byId.get(id)
+          if (!place) continue
+          next[id] = withPlacePrice(apply(next[id] ?? emptyPlaceRatings(place, cityLabel)))
+        }
+        return next
+      })
+    }
+    const queue = (id: string, apply: (base: PlaceRatings) => PlaceRatings) => {
+      pending.push([id, apply])
+      if (!flushTimer) flushTimer = window.setTimeout(flush, 120)
+    }
 
-      if (ctrl.signal.aborted) return
-
-      await mapPool(
+    const runSource = <K extends 'google' | 'yelp' | 'tripadvisor'>(
+      key: K,
+      concurrency: number,
+      fetchRating: (place: RankedRestaurant, city: string, signal: AbortSignal) => Promise<PlaceRatings[K]>,
+    ) =>
+      mapPool(
         list,
-        4,
+        concurrency,
         async (place) => {
           if (ctrl.signal.aborted) return
           try {
-            const yelp = await fetchYelpRating(place, cityLabel, ctrl.signal)
-            if (ctrl.signal.aborted) return
-            setMap((prev) => {
-              const base = prev[place.id] ?? emptyPlaceRatings(place, cityLabel)
-              return { ...prev, [place.id]: withPlacePrice({ ...base, yelp }) }
-            })
+            const rating = await fetchRating(place, cityLabel, ctrl.signal)
+            if (!ctrl.signal.aborted) queue(place.id, (base) => ({ ...base, [key]: rating }))
           } catch {
             // skip
           }
@@ -84,32 +86,22 @@ export function usePlaceRatings(
         ctrl.signal,
       )
 
+    // The three sources are independent proxy calls; fetch them side by side
+    // instead of waiting for every Google lookup before starting Yelp, etc.
+    void Promise.all([
+      opts?.skipGoogle ? Promise.resolve() : runSource('google', 8, fetchGoogleRating),
+      runSource('yelp', 4, fetchYelpRating),
+      runSource('tripadvisor', 3, fetchTripadvisorRating),
+    ]).then(() => {
       if (ctrl.signal.aborted) return
-
-      await mapPool(
-        list,
-        3,
-        async (place) => {
-          if (ctrl.signal.aborted) return
-          try {
-            const tripadvisor = await fetchTripadvisorRating(place, cityLabel, ctrl.signal)
-            if (ctrl.signal.aborted) return
-            setMap((prev) => {
-              const base = prev[place.id] ?? emptyPlaceRatings(place, cityLabel)
-              return { ...prev, [place.id]: withPlacePrice({ ...base, tripadvisor }) }
-            })
-          } catch {
-            // skip
-          }
-        },
-        ctrl.signal,
-      )
-
-      if (!ctrl.signal.aborted) setLoading(false)
-    })()
+      window.clearTimeout(flushTimer)
+      flush()
+      setLoading(false)
+    })
 
     return () => {
       ctrl.abort()
+      window.clearTimeout(flushTimer)
       setLoading(false)
     }
   }, [placeIds, cityLabel, enabled, opts?.skipGoogle])
