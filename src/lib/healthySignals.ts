@@ -1,4 +1,5 @@
 import type {
+  HealthyFocusId,
   HealthyLane,
   HealthySignal,
   HealthySignalId,
@@ -177,27 +178,106 @@ export function healthySignalScore(signals: HealthySignal[]): number {
   }, 0)
 }
 
+/** Name and category tags only. The street address must not decide a category ("Fish Hatchery Rd"). */
+function categoryBlob(place: Restaurant): string {
+  return `${place.name} ${place.cuisineRaw ?? ''} ${place.cuisines.join(' ')} ${place.amenity ?? ''}`.toLowerCase()
+}
+
+const WHOLE_FOOD_PROTEIN = /\b(seafood|salmon|fish|sushi|sashimi|poke|steak|steaks|steakhouse|steak_house|chophouse|new american|modern american|bistro|mediterranean|greek)\b/
+const PLANT_FORWARD = /\b(vegan|vegetarian|plant[-_ ]based|salad|salads|healthy|organic|farm[-_ ]to[-_ ]table|grain bowls?)\b/
+const SMOOTHIE_JUICE = /\b(smoothies?|juice|juices|juice_bar|juicebars|acai|açaí|acaibowls)\b/
+/** Treats and drinks that are never a healthy pick on their own. */
+const INDULGENT_ONLY = /\b(ice_cream|ice cream|frozen_yogurt|frozen yogurt|donut|donuts|doughnut|doughnuts|dessert|desserts|cake|cakes|cupcake|bakery|pastry|patisserie|candy|chocolate|bubble_tea|bubble tea|boba|coffee_shop|coffee|cookies?|creamery|gelato)\b/
+
 export function isQualityWholeFoodFallback(place: Restaurant, signals: HealthySignal[]): boolean {
   if (isKnownQualityFallback(place)) return true
   const ids = new Set(signals.map((signal) => signal.id))
   if (ids.has('salmon') || ids.has('steak') || ids.has('wild_caught') || ids.has('chicken_breast')) return true
-
   // No bare "grill": it pulls in sports bars and burger joints.
-  const blob = listingBlob(place).toLowerCase()
-  return /\b(seafood|salmon|fish|sushi|sashimi|steak|steakhouse|steak_house|new american|modern american|bistro|mediterranean)\b/.test(blob)
+  return WHOLE_FOOD_PROTEIN.test(categoryBlob(place))
+}
+
+export function isPlantForward(place: Restaurant): boolean {
+  if (place.vegan === 'yes' || place.vegan === 'only' || place.vegetarian === 'only') return true
+  return PLANT_FORWARD.test(categoryBlob(place))
+}
+
+export function isSmoothieOrJuice(place: Restaurant, signals: HealthySignal[]): boolean {
+  return signals.some((signal) => signal.id === 'smoothie') || SMOOTHIE_JUICE.test(categoryBlob(place))
+}
+
+/** Dessert, coffee, donut and boba shops: excluded from healthy results unless there is real evidence. */
+export function isIndulgentOnly(place: Restaurant): boolean {
+  if (place.amenity === 'ice_cream') return true
+  return INDULGENT_ONLY.test(categoryBlob(place))
 }
 
 /**
- * Lower is better. Known healthy brands (True Food Kitchen, Tropical Smoothie
- * Cafe, Pure Green…) and explicit clean-food evidence (grass-fed, no seed oils…)
- * come first; then salmon/steak/seafood whole-food restaurants; then generic
- * smoothie or juice spots; then everything else.
+ * Lower is better; HEALTHY_EXCLUDED_TIER means "not a healthy pick".
+ * 0: known healthy brands (True Food Kitchen, Tropical Smoothie Cafe, Pure Green…)
+ *    or explicit clean-food evidence (grass-fed, no seed oils, organic…).
+ * 1: whole-food restaurants (steak, salmon, seafood, poke, Mediterranean) and
+ *    plant-forward spots (vegan, vegetarian, salad).
+ * 2: other smoothie / juice / açaí shops.
+ * Everything else, including dessert, coffee, donut and boba shops, is excluded:
+ * healthy mode shows fewer places rather than padding with pizza or a bar & grill.
  */
+export const HEALTHY_EXCLUDED_TIER = 3
+
 export function healthyQualityTier(place: Restaurant, signals: HealthySignal[]): number {
   if (matchKnownChain(place) || hasPrimaryHealthyEvidence(signals)) return 0
-  if (isQualityWholeFoodFallback(place, signals)) return 1
-  if (signals.some((signal) => signal.id === 'smoothie')) return 2
-  return 3
+  if (isIndulgentOnly(place)) return HEALTHY_EXCLUDED_TIER
+  if (isQualityWholeFoodFallback(place, signals) || isPlantForward(place)) return 1
+  if (isSmoothieOrJuice(place, signals)) return 2
+  return HEALTHY_EXCLUDED_TIER
+}
+
+export function isHealthyMatch(place: Restaurant, signals: HealthySignal[]): boolean {
+  return healthyQualityTier(place, signals) < HEALTHY_EXCLUDED_TIER
+}
+
+/** Short, specific "why it's here" line for healthy places without stronger evidence. */
+export function healthyCategoryReason(place: Restaurant, signals: HealthySignal[]): string | null {
+  if (matchesHealthyFocus(place, signals, 'steak')) return 'Steakhouse — whole-food protein'
+  if (matchesHealthyFocus(place, signals, 'seafood')) return 'Salmon, seafood, sushi or poke'
+  if (isPlantForward(place)) return 'Plant-forward: vegan, vegetarian or salad'
+  if (isQualityWholeFoodFallback(place, signals)) return 'Whole-food menu (Mediterranean, bistro, grilled proteins)'
+  if (isSmoothieOrJuice(place, signals)) return 'Smoothie, juice or açaí bar'
+  return null
+}
+
+export const HEALTHY_FOCUS_OPTIONS: Array<{ id: HealthyFocusId; label: string; hint: string }> = [
+  { id: 'clean', label: 'Clean kitchens', hint: 'True Food Kitchen–style; grass-fed, organic, no seed oils' },
+  { id: 'smoothie', label: 'Smoothies & bowls', hint: 'Tropical Smoothie, Pure Green, juice and açaí bars' },
+  { id: 'steak', label: 'Steak', hint: 'Steakhouses and grass-fed steak' },
+  { id: 'seafood', label: 'Salmon & seafood', hint: 'Wild salmon, seafood, sushi and poke' },
+  { id: 'plant', label: 'Plant-forward', hint: 'Vegan, vegetarian and salad spots' },
+]
+
+export function isHealthyFocusId(value: string): value is HealthyFocusId {
+  return HEALTHY_FOCUS_OPTIONS.some((option) => option.id === value)
+}
+
+export function matchesHealthyFocus(
+  place: Restaurant,
+  signals: HealthySignal[],
+  focus: HealthyFocusId,
+): boolean {
+  const ids = new Set(signals.map((signal) => signal.id))
+  const blob = categoryBlob(place)
+  const chain = matchKnownChain(place)
+  switch (focus) {
+    case 'clean':
+      return chain?.lane === 'clean_cooking' || hasPrimaryHealthyEvidence(signals) || /\b(organic|farm[-_ ]to[-_ ]table)\b/.test(blob)
+    case 'smoothie':
+      return chain?.lane === 'smoothie' || isSmoothieOrJuice(place, signals)
+    case 'steak':
+      return ids.has('steak') || /\b(steak|steaks|steakhouse|steak_house|chophouse)\b/.test(blob)
+    case 'seafood':
+      return ids.has('salmon') || ids.has('wild_caught') || /\b(seafood|salmon|fish|sushi|sashimi|poke)\b/.test(blob)
+    case 'plant':
+      return isPlantForward(place)
+  }
 }
 
 function sourceFromHint(hint?: HealthySignalSource): HealthySignalSource {
