@@ -18,6 +18,8 @@ import { buildSearchShareUrl } from './lib/links'
 import { coordsToCitySelection } from './lib/geocode'
 import { ensureCacheGeneration, pruneExpiredCache } from './lib/storage'
 import { attachSeedOilSignals, pickHealthyLanes, runHealthyHunt } from './lib/healthySearch'
+import { isHealthyFocusId } from './lib/healthySignals'
+import type { PriceLevel } from './lib/priceRange'
 import { fetchRestaurants } from './lib/overpass'
 import { discoverProviderCandidates, mergeProviderCandidates } from './lib/providerDiscovery'
 import { rankRestaurants } from './lib/rank'
@@ -31,11 +33,12 @@ import {
   pushRecentCity,
   recentToCitySelection,
   saveShortlist,
+  setDietaryPrefs,
   skipPlace,
   toggleShortlist,
   type ShortlistItem,
 } from './lib/taste'
-import type { CitySelection, CuisineId, DietaryId, MapBounds, RankedRestaurant, Restaurant, TasteProfile } from './lib/types'
+import type { CitySelection, CuisineId, DietaryId, HealthyFocusId, MapBounds, RankedRestaurant, Restaurant, TasteProfile } from './lib/types'
 import { CuisineStep } from './components/CuisineStep'
 import { ResultsStep } from './components/ResultsStep'
 import { SettingsPage } from './components/SettingsPage'
@@ -130,11 +133,18 @@ function SearchFlow() {
     () => !restored && !initialRecent && typeof navigator !== 'undefined' && 'geolocation' in navigator,
   )
   const [cuisines, setCuisines] = useState<CuisineId[]>(() => initialCuisines)
-  const [dietary] = useState<DietaryId[]>(() => {
+  const [dietary, setDietary] = useState<DietaryId[]>(() => {
     const d = params.get('dietary')
     if (d) return d.split(',').filter((id) => isKnownDietaryId(id)) as DietaryId[]
     return taste.dietaryPrefs
   })
+  const [healthyFocus, setHealthyFocus] = useState<HealthyFocusId[]>(
+    () => (params.get('focus') ?? '').split(',').filter(isHealthyFocusId),
+  )
+  const healthyFocusRef = useRef(healthyFocus)
+  healthyFocusRef.current = healthyFocus
+  const [maxMiles, setMaxMiles] = useState<number | null>(null)
+  const [priceLevels, setPriceLevels] = useState<PriceLevel[]>([])
   const [keyword, setKeyword] = useState(() => params.get('keyword') ?? '')
   const [rawPlaces, setRawPlaces] = useState<Restaurant[]>([])
   const [displayPlaces, setDisplayPlaces] = useState<RankedRestaurant[]>([])
@@ -325,6 +335,7 @@ function SearchFlow() {
             keyword: searchKeyword,
             taste: tasteRef.current,
             osmPlaces: osm,
+            focus: healthyFocusRef.current,
             signal: ctrl.signal,
             onProgress: (update) => {
               if (ctrl.signal.aborted) return
@@ -441,7 +452,7 @@ function SearchFlow() {
       const fresh =
         slots > 0
           ? cuisines.includes('healthy') && healthyPoolRef.current.length
-            ? pickHealthyLanes(healthyPoolRef.current, slots, nextSeen)
+            ? pickHealthyLanes(healthyPoolRef.current, slots, nextSeen, healthyFocus)
             : rankRestaurants(pool, {
                 center: city.center,
                 selectedCuisines: cuisines,
@@ -466,7 +477,7 @@ function SearchFlow() {
         setScrollToResultsKey((k) => k + 1)
       }
     }
-  }, [city, cuisines, dietary, keyword, taste, displayPlaces, favoriteIds, seenIds, rawPlaces, loadRestaurantPool])
+  }, [city, cuisines, dietary, keyword, taste, displayPlaces, favoriteIds, seenIds, rawPlaces, loadRestaurantPool, healthyFocus])
 
   useEffect(() => {
     if (!city) return
@@ -550,6 +561,28 @@ function SearchFlow() {
     }
   }, [restored, initialRecent, resolvingLocation])
 
+  function changeDietary(next: DietaryId[]) {
+    setDietary(next)
+    setTaste(setDietaryPrefs(taste, next))
+  }
+
+  /** On results, re-pick from the healthy pool already fetched: no new search needed. */
+  function changeHealthyFocus(next: HealthyFocusId[]) {
+    setHealthyFocus(next)
+    setParams((prev) => {
+      const params = new URLSearchParams(prev)
+      if (next.length) params.set('focus', next.join(','))
+      else params.delete('focus')
+      return params
+    }, { replace: true })
+    if (step === 'results' && healthyPoolRef.current.length) {
+      const picked = pickHealthyLanes(healthyPoolRef.current, 10, undefined, next)
+      setDisplayPlaces(picked)
+      setSeenIds(new Set(picked.map((p) => p.id)))
+      setFavoriteIds(new Set())
+    }
+  }
+
   function startFind() {
     if (!city || !hasSearchCriteria(cuisines, keyword)) return
     setScrollToResultsKey((k) => k + 1)
@@ -558,6 +591,8 @@ function SearchFlow() {
       if (cuisines.length) next.set('cuisines', cuisines.join(','))
       else next.delete('cuisines')
       next.set('dietary', dietary.join(','))
+      if (cuisines.includes('healthy') && healthyFocus.length) next.set('focus', healthyFocus.join(','))
+      else next.delete('focus')
       const trimmed = keyword.trim()
       if (trimmed) next.set('keyword', trimmed)
       else next.delete('keyword')
@@ -649,6 +684,10 @@ function SearchFlow() {
           cityLabel={city.label}
           selected={cuisines}
           keyword={keyword}
+          healthyFocus={healthyFocus}
+          onHealthyFocusChange={setHealthyFocus}
+          dietary={dietary}
+          onDietaryChange={changeDietary}
           onChange={setCuisines}
           onKeywordChange={setKeyword}
           onBack={backFromCuisine}
@@ -669,6 +708,12 @@ function SearchFlow() {
           showSeedOil={dietary.includes('no_seed_oils') || healthyMode}
           openNowOnly={openNowOnly}
           hasWebsiteOnly={hasWebsiteOnly}
+          healthyFocus={healthyFocus}
+          onHealthyFocusChange={changeHealthyFocus}
+          maxMiles={maxMiles}
+          onMaxMilesChange={setMaxMiles}
+          priceLevels={priceLevels}
+          onPriceLevelsChange={setPriceLevels}
           ratingsMap={ratingsMap}
           ratingsLoading={ratingsLoading}
           seedOilMap={seedOilMap}

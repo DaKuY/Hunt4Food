@@ -369,6 +369,15 @@ main {
   font-weight: 600;
 }
 
+/* Toggle chips announce state with aria-pressed; show it visibly too, not just by color. */
+.chip[aria-pressed='true'] {
+  font-weight: 650;
+}
+
+.chip[aria-pressed='true']::before {
+  content: '✓ ';
+}
+
 .chip:disabled {
   opacity: 0.35;
   cursor: not-allowed;

@@ -8,12 +8,13 @@ import {
   tripadvisorUrl,
   yelpUrl,
 } from '../lib/links'
-import { signalSourceLabel } from '../lib/healthySignals'
+import { HEALTHY_FOCUS_OPTIONS, signalSourceLabel } from '../lib/healthySignals'
+import type { PriceLevel } from '../lib/priceRange'
 import { FIRST_RESULT_ID, scrollToFirstResult } from '../lib/scroll'
 import type { PlaceRatings } from '../lib/ratings'
 import { formatDistanceMiles, isProbablyOpenNow } from '../lib/rank'
 import type { SeedOilInfo } from '../lib/seedOil'
-import type { RankedRestaurant } from '../lib/types'
+import type { HealthyFocusId, RankedRestaurant } from '../lib/types'
 import { RatingsRow } from './RatingsRow'
 
 const ResultsMap = lazy(() =>
@@ -32,6 +33,12 @@ type Props = {
   searchStatus?: string | null
   openNowOnly: boolean
   hasWebsiteOnly: boolean
+  healthyFocus: HealthyFocusId[]
+  onHealthyFocusChange: (focus: HealthyFocusId[]) => void
+  maxMiles: number | null
+  onMaxMilesChange: (miles: number | null) => void
+  priceLevels: PriceLevel[]
+  onPriceLevelsChange: (levels: PriceLevel[]) => void
   ratingsMap: Record<string, PlaceRatings>
   ratingsLoading: boolean
   seedOilMap: Record<string, SeedOilInfo>
@@ -58,6 +65,10 @@ type Props = {
 }
 
 
+const KM_PER_MILE = 1.609
+const DISTANCE_CHOICES = [1, 3, 5, 10] as const
+const PRICE_CHOICES: PriceLevel[] = [1, 2, 3, 4]
+
 export function ResultsStep({
   places,
   cityLabel,
@@ -70,6 +81,12 @@ export function ResultsStep({
   searchStatus = null,
   openNowOnly,
   hasWebsiteOnly,
+  healthyFocus,
+  onHealthyFocusChange,
+  maxMiles,
+  onMaxMilesChange,
+  priceLevels,
+  onPriceLevelsChange,
   ratingsMap,
   ratingsLoading,
   seedOilMap,
@@ -96,6 +113,10 @@ export function ResultsStep({
 }: Props) {
   const filtered = places.filter((p) => {
     if (hasWebsiteOnly && !p.website) return false
+    if (maxMiles != null && p.distanceKm > maxMiles * KM_PER_MILE) return false
+    // Price comes from Google/Yelp; places with no price data yet stay listed.
+    const level = ratingsMap[p.id]?.price.level
+    if (priceLevels.length && level != null && !priceLevels.includes(level)) return false
     if (openNowOnly) {
       const open = isProbablyOpenNow(p.openingHours)
       if (open === false) return false
@@ -297,6 +318,66 @@ export function ResultsStep({
         </p>
       ) : null}
 
+      {healthyMode ? (
+        <div className="filters chip-row wrap" role="group" aria-label="What kind of healthy">
+          <button
+            type="button"
+            className={`chip healthy ${healthyFocus.length === 0 ? 'on' : ''}`}
+            aria-pressed={healthyFocus.length === 0}
+            onClick={() => onHealthyFocusChange([])}
+          >
+            All healthy
+          </button>
+          {HEALTHY_FOCUS_OPTIONS.map((option) => {
+            const on = healthyFocus.includes(option.id)
+            return (
+              <button
+                key={option.id}
+                type="button"
+                className={`chip healthy ${on ? 'on' : ''}`}
+                aria-pressed={on}
+                title={option.hint}
+                onClick={() =>
+                  onHealthyFocusChange(on ? healthyFocus.filter((f) => f !== option.id) : [...healthyFocus, option.id])
+                }
+              >
+                {option.label}
+              </button>
+            )
+          })}
+        </div>
+      ) : null}
+
+      <div className="filters chip-row wrap" role="group" aria-label="Distance and price">
+        {DISTANCE_CHOICES.map((miles) => (
+          <button
+            key={miles}
+            type="button"
+            className={`chip ghost ${maxMiles === miles ? 'on' : ''}`}
+            aria-pressed={maxMiles === miles}
+            onClick={() => onMaxMilesChange(maxMiles === miles ? null : miles)}
+          >
+            ≤ {miles} mi
+          </button>
+        ))}
+        {PRICE_CHOICES.map((level) => {
+          const on = priceLevels.includes(level)
+          return (
+            <button
+              key={level}
+              type="button"
+              className={`chip ghost ${on ? 'on' : ''}`}
+              aria-pressed={on}
+              onClick={() =>
+                onPriceLevelsChange(on ? priceLevels.filter((l) => l !== level) : [...priceLevels, level].sort())
+              }
+            >
+              {'$'.repeat(level)}
+            </button>
+          )
+        })}
+      </div>
+
       <div className="filters chip-row wrap">
         <button type="button" className={`chip ghost ${openNowOnly ? 'on' : ''}`} onClick={onToggleOpenNow}>
           Prefer open now
@@ -352,7 +433,25 @@ export function ResultsStep({
         </div>
       )}
 
-      {!loading && !error && filtered.length === 0 && (
+      {!loading && !error && places.length > 0 && filtered.length === 0 && (
+        <div className="empty-state">
+          <p>None of these {places.length} places match your filters.</p>
+          <button
+            type="button"
+            className="btn primary"
+            onClick={() => {
+              onMaxMilesChange(null)
+              onPriceLevelsChange([])
+              if (openNowOnly) onToggleOpenNow()
+              if (hasWebsiteOnly) onToggleWebsite()
+            }}
+          >
+            Clear filters
+          </button>
+        </div>
+      )}
+
+      {!loading && !error && places.length === 0 && (
         <div className="empty-state">
           <p>
             {keyword && cuisineLabels.length === 0
@@ -378,6 +477,19 @@ export function ResultsStep({
           <ResultsMap places={filtered} center={cityCenter} />
         </Suspense>
       )}
+
+      {healthyMode && !loading && places.length > 0 && places.length < 10 ? (
+        <p className="muted small" aria-live="polite">
+          Only {places.length} healthy {places.length === 1 ? 'spot' : 'spots'} in this map area
+          {healthyFocus.length ? ' for your picks' : ''}. Hunt4Food won&apos;t pad the list with pizza or burgers — zoom
+          the map out or choose a neighborhood nearby to see more.
+        </p>
+      ) : null}
+      {filtered.length < places.length && filtered.length > 0 ? (
+        <p className="muted small">
+          Showing {filtered.length} of {places.length} after your filters.
+        </p>
+      ) : null}
 
       <ol className="result-list">{filtered.map((place, index) => renderCard(place, index + 1))}</ol>
 
