@@ -1,10 +1,15 @@
-import { CUISINES, CUISINE_GROUPS } from '../data/cuisines'
+import { CUISINES, CUISINE_GROUPS, DIETARY_OPTIONS } from '../data/cuisines'
+import { HEALTHY_FOCUS_OPTIONS } from '../lib/healthySignals'
 import { KEYWORD_SUGGESTIONS } from '../lib/keyword'
-import type { CuisineId } from '../lib/types'
+import type { CuisineId, DietaryId, HealthyFocusId } from '../lib/types'
 
 type Props = {
   selected: CuisineId[]
   keyword: string
+  healthyFocus: HealthyFocusId[]
+  onHealthyFocusChange: (focus: HealthyFocusId[]) => void
+  dietary: DietaryId[]
+  onDietaryChange: (dietary: DietaryId[]) => void
   onChange: (cuisines: CuisineId[]) => void
   onKeywordChange: (keyword: string) => void
   onBack: () => void
@@ -17,6 +22,10 @@ const FOOD_CAP = 3
 export function CuisineStep({
   selected,
   keyword,
+  healthyFocus,
+  onHealthyFocusChange,
+  dietary,
+  onDietaryChange,
   onChange,
   onKeywordChange,
   onBack,
@@ -34,6 +43,14 @@ export function CuisineStep({
       return
     }
     onChange(['healthy', ...foodSelected])
+  }
+
+  function toggleFocus(id: HealthyFocusId) {
+    onHealthyFocusChange(healthyFocus.includes(id) ? healthyFocus.filter((f) => f !== id) : [...healthyFocus, id])
+  }
+
+  function toggleDietary(id: DietaryId) {
+    onDietaryChange(dietary.includes(id) ? dietary.filter((d) => d !== id) : [...dietary, id])
   }
 
   function toggleFood(id: CuisineId) {
@@ -67,6 +84,33 @@ export function CuisineStep({
             Healthy
           </button>
         </div>
+        {healthyOn ? (
+          <>
+            <h4 className="subhead small">What kind of healthy? <span className="muted">(optional, pick any)</span></h4>
+            <div className="chip-row wrap" role="group" aria-label="Healthy focus">
+              {HEALTHY_FOCUS_OPTIONS.map((option) => {
+                const on = healthyFocus.includes(option.id)
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    className={`chip healthy ${on ? 'on' : ''}`}
+                    aria-pressed={on}
+                    title={option.hint}
+                    onClick={() => toggleFocus(option.id)}
+                  >
+                    {option.label}
+                  </button>
+                )
+              })}
+            </div>
+            <p className="muted small">
+              {healthyFocus.length
+                ? `Showing only: ${HEALTHY_FOCUS_OPTIONS.filter((o) => healthyFocus.includes(o.id)).map((o) => o.label.toLowerCase()).join(', ')}.`
+                : 'None picked shows a mix of all five.'}
+            </p>
+          </>
+        ) : null}
         {healthyOn ? (
           <p className="healthy-helper">
             We check Google, Yelp, TripAdvisor, and OpenTable for grass-fed, clean oils, smoothie shops,
@@ -105,6 +149,28 @@ export function CuisineStep({
         {foodSelected.length}/{FOOD_CAP} food types
         {healthyOn ? ' · Healthy on' : ''} — or search with just a keyword
       </p>
+
+      <div className="cuisine-group">
+        <h3 className="subhead">Preferences <span className="muted small">(remembered for next time)</span></h3>
+        <div className="chip-row wrap" role="group" aria-label="Dietary preferences">
+          {DIETARY_OPTIONS.map((option) => {
+            const on = dietary.includes(option.id)
+            return (
+              <button
+                key={option.id}
+                type="button"
+                className={`chip ${on ? 'on' : ''}`}
+                aria-pressed={on}
+                title={option.hint}
+                onClick={() => toggleDietary(option.id)}
+              >
+                {option.label}
+              </button>
+            )
+          })}
+        </div>
+        <p className="muted small">Preferences move matching places up; they don&apos;t hide others.</p>
+      </div>
 
       <label className="field keyword-field">
         <span>Anything else</span>

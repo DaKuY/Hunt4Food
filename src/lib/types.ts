@@ -75,6 +75,9 @@ export type Restaurant = {
 
 export type HealthyLane = 'clean_cooking' | 'smoothie' | 'protein'
 
+/** What kind of healthy the user wants. None selected means all of them. */
+export type HealthyFocusId = 'clean' | 'smoothie' | 'steak' | 'seafood' | 'plant'
+
 export type HealthySignalId =
   | 'grass_fed'
   | 'pasture_raised'

@@ -94,9 +94,10 @@ describe('leave-to-lodge path', () => {
 
   it('does not push search-param history on city/cuisine bootstrap', () => {
     const calls = [...app.matchAll(/setParams\(/g)]
-    expect(calls.length).toBe(4)
+    expect(calls.length).toBeGreaterThanOrEqual(4)
     expect(app).toContain('setParams(new URLSearchParams(), { replace: true })')
-    expect((app.match(/\{ replace: true \}/g) ?? []).length).toBeGreaterThanOrEqual(4)
+    // Every search-param update must replace, never push, a history entry.
+    expect((app.match(/\{ replace: true \}/g) ?? []).length).toBeGreaterThanOrEqual(calls.length)
   })
 
   it('sends first-screen Back to the lodge instead of bouncing city↔cuisine', () => {
