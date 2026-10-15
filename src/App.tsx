@@ -15,9 +15,11 @@ import { usePlaceDishes } from './hooks/usePlaceDishes'
 import { usePlaceRatings } from './hooks/usePlaceRatings'
 import { usePlaceSeedOil } from './hooks/usePlaceSeedOil'
 import { buildSearchShareUrl } from './lib/links'
-import { coordsToCitySelection } from './lib/geocode'
+import { coordsToCitySelection, searchCities, type GeocodeHit } from './lib/geocode'
+import { describeParsedQuery, parseSearchQuery } from './lib/queryParser'
+import { applySeedOilRequirement } from './lib/seedOilStatus'
 import { ensureCacheGeneration, pruneExpiredCache } from './lib/storage'
-import { attachSeedOilSignals, pickHealthyLanes, runHealthyHunt } from './lib/healthySearch'
+import { attachSeedOilSignals, mineReviewEvidence, pickHealthyLanes, runHealthyHunt } from './lib/healthySearch'
 import { isHealthyFocusId } from './lib/healthySignals'
 import type { PriceLevel } from './lib/priceRange'
 import { fetchRestaurants } from './lib/overpass'
@@ -39,6 +41,7 @@ import {
   type ShortlistItem,
 } from './lib/taste'
 import type { CitySelection, CuisineId, DietaryId, HealthyFocusId, MapBounds, RankedRestaurant, Restaurant, TasteProfile } from './lib/types'
+import { AskBar } from './components/AskBar'
 import { CuisineStep } from './components/CuisineStep'
 import { ResultsStep } from './components/ResultsStep'
 import { SettingsPage } from './components/SettingsPage'
@@ -96,6 +99,33 @@ function cityFromParams(params: URLSearchParams): CitySelection | null {
   }
 }
 
+/** "Near Coppell TX": the place's centre with its area capped at about ±5 miles, so a big city's full extent doesn't swamp the search. */
+function nearSelection(hit: GeocodeHit): CitySelection {
+  const span = 0.08
+  return {
+    label: hit.label,
+    center: { lat: hit.lat, lon: hit.lon },
+    bounds: {
+      south: Math.max(hit.south, hit.lat - span),
+      north: Math.min(hit.north, hit.lat + span),
+      west: Math.max(hit.west, hit.lon - span),
+      east: Math.min(hit.east, hit.lon + span),
+    },
+    source: 'search',
+  }
+}
+
+function currentPosition(timeoutMs = 10000): Promise<GeolocationPosition | null> {
+  if (typeof navigator === 'undefined' || !navigator.geolocation) return Promise.resolve(null)
+  return new Promise((resolve) => {
+    navigator.geolocation.getCurrentPosition(resolve, () => resolve(null), {
+      enableHighAccuracy: false,
+      timeout: timeoutMs,
+      maximumAge: 600000,
+    })
+  })
+}
+
 function useTaste() {
   const [taste, setTaste] = useState<TasteProfile>(() => loadTaste())
   return { taste, setTaste }
@@ -144,6 +174,8 @@ function SearchFlow() {
   const healthyFocusRef = useRef(healthyFocus)
   healthyFocusRef.current = healthyFocus
   const [maxMiles, setMaxMiles] = useState<number | null>(null)
+  const [asking, setAsking] = useState(false)
+  const [askMessage, setAskMessage] = useState<{ kind: 'understood' | 'problem'; text: string } | null>(null)
   const [priceLevels, setPriceLevels] = useState<PriceLevel[]>([])
   const [keyword, setKeyword] = useState(() => params.get('keyword') ?? '')
   const [rawPlaces, setRawPlaces] = useState<Restaurant[]>([])
@@ -202,9 +234,10 @@ function SearchFlow() {
     return fetchRestaurants(bounds, signal)
   }, [])
 
-  const places = displayPlaces
+  const requireNoSeedOils = dietary.includes('no_seed_oils')
 
   const healthyMode = cuisines.includes('healthy')
+  const places = displayPlaces
   const { ratingsMap, ratingsLoading } = usePlaceRatings(
     places,
     city?.label ?? '',
@@ -213,8 +246,38 @@ function SearchFlow() {
   )
   const { seedOilMap, seedOilLoading } = usePlaceSeedOil(
     places,
-    step === 'results' && places.length > 0 && (dietary.includes('no_seed_oils') || healthyMode),
+    step === 'results' && places.length > 0 && (requireNoSeedOils || healthyMode),
   )
+  // "No seed oils": hide places known to use them; verified seed-oil-free places first.
+  const shownPlaces = useMemo(
+    () => (requireNoSeedOils ? applySeedOilRequirement(places, seedOilMap) : places),
+    [requireNoSeedOils, places, seedOilMap],
+  )
+
+  // Outside healthy mode nothing reads reviews, so fetch them once per place for seed-oil evidence
+  // (lard, tallow, avocado oil, "no seed oils", or "fried in canola oil").
+  const minedIdsRef = useRef(new Set<string>())
+  const cityLabelRef = useRef(city?.label ?? '')
+  cityLabelRef.current = city?.label ?? ''
+  useEffect(() => {
+    if (!requireNoSeedOils || healthyMode || step !== 'results' || !city) return
+    const pending = displayPlaces.filter((p) => p.yelpId && !minedIdsRef.current.has(p.id))
+    if (!pending.length) return
+    pending.forEach((p) => minedIdsRef.current.add(p.id))
+    const label = city.label
+    void mineReviewEvidence(pending, label).then((mined) => {
+      if (cityLabelRef.current !== label) return
+      const byId = new Map(mined.map((p) => [p.id, p]))
+      setDisplayPlaces((prev) =>
+        prev.map((p) => {
+          const m = byId.get(p.id)
+          return m && m.evidenceText !== undefined
+            ? { ...p, signals: m.signals, evidenceText: m.evidenceText, evidenceQuote: m.evidenceQuote, reasons: m.reasons }
+            : p
+        }),
+      )
+    })
+  }, [requireNoSeedOils, healthyMode, step, city, displayPlaces])
   const { dishesMap, dishesLoading } = usePlaceDishes(
     places,
     city?.label ?? '',
@@ -364,6 +427,7 @@ function SearchFlow() {
         poolRef.current = raw
         setRawPlaces(raw)
         const ranked = rankRestaurants(raw, {
+          onlyMatchingCuisines: true,
           center: selection.center,
           selectedCuisines: food,
           dietary: dietaryPrefs,
@@ -454,6 +518,7 @@ function SearchFlow() {
           ? cuisines.includes('healthy') && healthyPoolRef.current.length
             ? pickHealthyLanes(healthyPoolRef.current, slots, nextSeen, healthyFocus)
             : rankRestaurants(pool, {
+                onlyMatchingCuisines: true,
                 center: city.center,
                 selectedCuisines: cuisines,
                 dietary,
@@ -504,6 +569,8 @@ function SearchFlow() {
     setStep('cuisine')
     setResolvingLocation(false)
     poolRef.current = []
+    // A search started right away (typed search) must not await the previous city's prefetch.
+    prefetchPromiseRef.current = null
     setRawPlaces([])
     setParams((prev) => {
       const next = new URLSearchParams(prev)
@@ -583,21 +650,77 @@ function SearchFlow() {
     }
   }
 
-  function startFind() {
-    if (!city || !hasSearchCriteria(cuisines, keyword)) return
-    setScrollToResultsKey((k) => k + 1)
+  function writeSearchParams(food: CuisineId[], diet: DietaryId[], kw: string, focus: HealthyFocusId[]) {
     setParams((prev) => {
       const next = new URLSearchParams(prev)
-      if (cuisines.length) next.set('cuisines', cuisines.join(','))
+      if (food.length) next.set('cuisines', food.join(','))
       else next.delete('cuisines')
-      next.set('dietary', dietary.join(','))
-      if (cuisines.includes('healthy') && healthyFocus.length) next.set('focus', healthyFocus.join(','))
+      next.set('dietary', diet.join(','))
+      if (food.includes('healthy') && focus.length) next.set('focus', focus.join(','))
       else next.delete('focus')
-      const trimmed = keyword.trim()
+      const trimmed = kw.trim()
       if (trimmed) next.set('keyword', trimmed)
       else next.delete('keyword')
       return next
     }, { replace: true })
+  }
+
+  /** Plain-language search: parse, find the place, set every filter, then search. */
+  async function askSearch(text: string) {
+    const parsed = parseSearchQuery(text)
+    if (!parsed.cuisines.length && !parsed.healthy && !parsed.keyword) {
+      setAskMessage({ kind: 'problem', text: 'Add a food or dish, e.g. “Mexican near Coppell TX without seed oils”.' })
+      return
+    }
+    setAsking(true)
+    setAskMessage(null)
+    try {
+      let selection = city
+      if (parsed.location) {
+        const hits = await searchCities(parsed.location).catch(() => [] as GeocodeHit[])
+        if (!hits.length) {
+          setAskMessage({ kind: 'problem', text: `Couldn’t find “${parsed.location}”. Try “City, ST”, e.g. “Coppell, TX”.` })
+          return
+        }
+        selection = nearSelection(hits[0]!)
+      } else if (parsed.nearMe || !selection) {
+        const pos = await currentPosition()
+        if (pos) selection = await coordsToCitySelection(pos.coords.latitude, pos.coords.longitude)
+      }
+      if (!selection) {
+        setAskMessage({ kind: 'problem', text: 'Where? Add “near <city>”, or allow location access.' })
+        return
+      }
+
+      const food = normalizeCuisineSelection(parsed.healthy ? ['healthy', ...parsed.cuisines] : parsed.cuisines)
+      const diet = Array.from(new Set([...dietary, ...parsed.dietary]))
+      const kw = parsed.keyword
+      if (selection !== city) confirmCity(selection, true)
+      setCuisines(food)
+      setDietary(diet)
+      setKeyword(kw)
+      setHealthyFocus(parsed.healthyFocus)
+      healthyFocusRef.current = parsed.healthyFocus
+      setMaxMiles(parsed.maxMiles)
+      setPriceLevels(parsed.priceLevels)
+      setOpenNowOnly(parsed.openNow)
+      writeSearchParams(food, diet, kw, parsed.healthyFocus)
+      setAskMessage({
+        kind: 'understood',
+        text: [...describeParsedQuery({ ...parsed, location: null, nearMe: false }, (id) => cuisineById(id).label), `near ${selection.label}`].join(' · '),
+      })
+      setScrollToResultsKey((k) => k + 1)
+      await runSearch(selection, food, diet, kw)
+    } finally {
+      setAsking(false)
+    }
+  }
+
+  function startFind() {
+    if (!city || !hasSearchCriteria(cuisines, keyword)) return
+    setScrollToResultsKey((k) => k + 1)
+    writeSearchParams(cuisines, dietary, keyword, healthyFocus)
+    setAskMessage(null)
     void runSearch(city, cuisines, dietary, keyword)
   }
 
@@ -663,6 +786,7 @@ function SearchFlow() {
 
   return (
     <>
+      <AskBar onAsk={(text) => void askSearch(text)} busy={asking} message={askMessage} />
       {step === 'city' && (
         resolvingLocation ? (
           <section className="step">
@@ -696,7 +820,9 @@ function SearchFlow() {
       )}
       {step === 'results' && city && (
         <ResultsStep
-          places={places}
+          places={shownPlaces}
+          seedOilRequired={requireNoSeedOils}
+          seedOilHiddenCount={places.length - shownPlaces.length}
           cityLabel={city.label}
           cityCenter={city.center}
           cuisineLabels={cuisineLabels}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { isFastFood, rankRestaurants } from './rank'
 import type { Restaurant, TasteProfile } from './types'
+import { emptyTaste } from './taste'
 
 const taste: TasteProfile = {
   version: 1,
@@ -113,5 +114,22 @@ describe('rankRestaurants', () => {
     )
 
     expect(ranked.map((restaurant) => restaurant.id)).toEqual(['provider-match'])
+  })
+})
+
+describe('onlyMatchingCuisines', () => {
+  const at = (name: string, cuisines: string[]) => ({ id: name, name, lat: 32.95, lon: -97.01, cuisines, amenity: 'restaurant' })
+  const opts = (onlyMatchingCuisines: boolean) => ({
+    center: { lat: 32.95, lon: -97.01 }, selectedCuisines: ['mexican' as const], dietary: [], taste: emptyTaste(), limit: 10, onlyMatchingCuisines,
+  })
+
+  it('does not pad a Mexican search with pizza when Mexican places exist', () => {
+    const pool = [at('Taqueria', ['mexican']), at('Pizza Co', ['pizza']), at('Cantina', ['mexican'])]
+    expect(rankRestaurants(pool, opts(true)).map((p) => p.name).sort()).toEqual(['Cantina', 'Taqueria'])
+    expect(rankRestaurants(pool, opts(false)).map((p) => p.name)).toContain('Pizza Co')
+  })
+
+  it('still shows nearby options when nothing matches', () => {
+    expect(rankRestaurants([at('Pizza Co', ['pizza'])], opts(true)).map((p) => p.name)).toEqual(['Pizza Co'])
   })
 })

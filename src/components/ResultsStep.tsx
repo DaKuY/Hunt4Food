@@ -14,6 +14,7 @@ import { FIRST_RESULT_ID, scrollToFirstResult } from '../lib/scroll'
 import type { PlaceRatings } from '../lib/ratings'
 import { formatDistanceMiles, isProbablyOpenNow } from '../lib/rank'
 import type { SeedOilInfo } from '../lib/seedOil'
+import { seedOilVerdict } from '../lib/seedOilStatus'
 import type { HealthyFocusId, RankedRestaurant } from '../lib/types'
 import { RatingsRow } from './RatingsRow'
 
@@ -23,6 +24,10 @@ const ResultsMap = lazy(() =>
 
 type Props = {
   places: RankedRestaurant[]
+  /** The search asked for no seed oils: show each place's verdict and the evidence behind it. */
+  seedOilRequired?: boolean
+  /** Places removed because they are known to use seed oils. */
+  seedOilHiddenCount?: number
   cityLabel: string
   cityCenter: { lat: number; lon: number }
   cuisineLabels: string[]
@@ -71,6 +76,8 @@ const PRICE_CHOICES: PriceLevel[] = [1, 2, 3, 4]
 
 export function ResultsStep({
   places,
+  seedOilRequired = false,
+  seedOilHiddenCount = 0,
   cityLabel,
   cityCenter,
   cuisineLabels,
@@ -201,6 +208,7 @@ export function ResultsStep({
             </div>
           )}
           {place.evidenceQuote ? <p className="evidence-quote">{place.evidenceQuote}</p> : null}
+          {seedOilRequired ? <SeedOilLine verdict={seedOilVerdict(place, seedOil)} checking={seedOilLoading && !seedOil} /> : null}
           {seedOil?.grade ? (
             <p className="seed-oil-badge">
               <a href={safeExternalUrl(seedOil.url, 'https://seedoiltracker.com')} target="_blank" rel="noreferrer" title={seedOil.cookingOil ?? undefined}>
@@ -277,7 +285,13 @@ export function ResultsStep({
     <section className="step results-step">
       <header className="step-header">
         <p className="eyebrow">Hunt4Food · {cityLabel}</p>
-        <h2>{healthyMode ? 'Healthy spots worth the hunt' : 'Ten places worth the hunt'}</h2>
+        <h2>
+          {healthyMode
+            ? 'Healthy spots worth the hunt'
+            : filtered.length && filtered.length < 10
+              ? `${filtered.length} ${filtered.length === 1 ? 'place' : 'places'} worth the hunt`
+              : 'Ten places worth the hunt'}
+        </h2>
         <p className="lede">
           {healthyMode ? (
             <>
@@ -312,6 +326,9 @@ export function ResultsStep({
       </header>
 
       {shareMessage && <p className="banner">{shareMessage}</p>}
+      {seedOilRequired && places.length > 0 ? (
+        <SeedOilSummary places={places} seedOilMap={seedOilMap} hidden={seedOilHiddenCount} />
+      ) : null}
       {healthyMode && searchStatus ? (
         <p className="healthy-status" aria-live="polite">
           {searchStatus}
@@ -507,5 +524,33 @@ export function ResultsStep({
         </button>
       </div>
     </section>
+  )
+}
+
+function SeedOilLine({ verdict, checking }: { verdict: ReturnType<typeof seedOilVerdict>; checking: boolean }) {
+  if (verdict.status === 'free') {
+    return <p className="seed-oil-verdict free">✓ No seed oils — {verdict.evidence}</p>
+  }
+  if (checking) return <p className="seed-oil-verdict muted">Checking seed-oil data…</p>
+  return <p className="seed-oil-verdict unknown">? Seed oils not verified — ask what they fry in before ordering</p>
+}
+
+function SeedOilSummary({
+  places,
+  seedOilMap,
+  hidden,
+}: {
+  places: RankedRestaurant[]
+  seedOilMap: Record<string, SeedOilInfo>
+  hidden: number
+}) {
+  const verified = places.filter((place) => seedOilVerdict(place, seedOilMap[place.id]).status === 'free').length
+  return (
+    <p className="banner seed-oil-summary" aria-live="polite">
+      <strong>No seed oils:</strong> {verified} verified · {places.length - verified} not verified
+      {hidden ? ` · ${hidden} hidden (known to use seed oils)` : ''}. Verified means Seed Oil Tracker or a review or
+      listing says so (e.g. cooks with lard, tallow or avocado oil). Most restaurants don&apos;t publish their cooking oil,
+      so unverified places are shown after verified ones — not as seed-oil free.
+    </p>
   )
 }
