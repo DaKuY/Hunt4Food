@@ -37,6 +37,12 @@ export const HEALTHY_SIGNAL_DEFS: Array<{
   },
   { id: 'avocado_oil', label: 'Avocado oil', patterns: [/avocado oil/i] },
   {
+    id: 'tallow',
+    label: 'Tallow or lard',
+    // Traditional Mexican kitchens often cook with lard (manteca).
+    patterns: [/beef tallow/i, /\btallow\b/i, /\blard\b/i, /\bmanteca\b/i, /duck fat/i],
+  },
+  {
     id: 'butter',
     label: 'Cooks with butter',
     patterns: [/cooked? in butter/i, /grass[-\s]?fed butter/i, /\bghee\b/i, /clarified butter/i],
@@ -118,6 +124,7 @@ const PRIMARY_SIGNAL_IDS = new Set<HealthySignalId>([
   'pasture_raised',
   'no_seed_oils',
   'avocado_oil',
+  'tallow',
   'butter',
   'organic',
   'wild_caught',
@@ -137,6 +144,7 @@ const HEALTHY_SIGNAL_WEIGHTS: Record<HealthySignalId, number> = {
   steak: 14,
   chicken_breast: 9,
   smoothie: 5,
+  tallow: 30,
 }
 
 function normalizeName(s: string): string {

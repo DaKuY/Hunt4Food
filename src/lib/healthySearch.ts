@@ -401,6 +401,7 @@ function applyReviews(
       ...place,
       signals,
       evidenceQuote: evidenceLine(signals) ?? place.evidenceQuote,
+      evidenceText: list.map((rev) => rev.text ?? '').join(' \n ').slice(0, 4000),
       reasons: Array.from(
         new Set([
           ...(signals.length
@@ -411,6 +412,25 @@ function applyReviews(
       ).slice(0, 4),
     }
   })
+}
+
+/**
+ * Read recent Yelp reviews for these places (through the ratings proxy) and
+ * attach what they say about cooking fats. Used for "no seed oils" searches
+ * outside healthy mode, which otherwise never read reviews. Best-effort: on any
+ * failure the places come back unchanged.
+ */
+export async function mineReviewEvidence(
+  places: RankedRestaurant[],
+  cityLabel: string,
+): Promise<RankedRestaurant[]> {
+  if (!places.some((p) => p.yelpId)) return places
+  try {
+    const data = await fetchHealthyReviews(places, cityLabel)
+    return applyReviews(places, data.reviews)
+  } catch {
+    return places
+  }
 }
 
 export function attachSeedOilSignals(

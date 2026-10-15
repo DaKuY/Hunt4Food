@@ -83,6 +83,7 @@ export type HealthySignalId =
   | 'pasture_raised'
   | 'no_seed_oils'
   | 'avocado_oil'
+  | 'tallow'
   | 'butter'
   | 'organic'
   | 'wild_caught'
@@ -117,6 +118,8 @@ export type RankedRestaurant = Restaurant & {
   lane?: HealthyLane
   signals?: HealthySignal[]
   evidenceQuote?: string
+  /** Raw review text kept (truncated) so a seed-oil check can spot "fried in canola oil". */
+  evidenceText?: string
   yelpId?: string
   sourceKind?: 'osm' | 'yelp' | 'google'
 }

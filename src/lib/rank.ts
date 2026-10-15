@@ -306,6 +306,8 @@ export function rankRestaurants(
     excludeIds?: Iterable<string>
     excludeFastFood?: boolean
     seedOilByPlaceId?: Record<string, SeedOilInfo>
+    /** Asked for "Mexican": when any place matches a picked cuisine, don't pad with pizza. */
+    onlyMatchingCuisines?: boolean
   },
 ): RankedRestaurant[] {
   const limit = opts.limit ?? 10
@@ -319,6 +321,9 @@ export function rankRestaurants(
   const keywordOnly = opts.selectedCuisines.length === 0 && Boolean(opts.keyword?.trim())
   if (keywordOnly) {
     pool = pool.filter((p) => keywordBoost(p, opts.keyword!).points > 0)
+  } else if (opts.onlyMatchingCuisines && opts.selectedCuisines.length) {
+    const matching = pool.filter((p) => opts.selectedCuisines.some((c) => matchesCuisine(p, c)))
+    if (matching.length) pool = matching
   }
 
   const ranked: RankedRestaurant[] = pool.map((place) => {
