@@ -18,6 +18,10 @@ export type ParsedQuery = {
   maxMiles: number | null
   priceLevels: PriceLevel[]
   openNow: boolean
+  /** "with a lunch special / deal / combo": verified lunch specials first. */
+  lunchSpecial: boolean
+  /** Plain "lunch": skip places that only open for dinner. */
+  lunch: boolean
   /** Words left over when nothing else matched, e.g. "birria". */
   keyword: string
 }
@@ -52,7 +56,8 @@ const FILLER = new Set(
   ('find me a an the some good best great place places spot spots restaurant restaurants food eat eating ' +
     'to get want i im i\'m looking for show give that which with has have doesn\'t doesnt does not use uses ' +
     'using cooked cook in near around by close nearby me please any free without no dont don\'t avoid oil oils ' +
-    'seed open now cheap budget fancy upscale under within miles mile mi of is are serves serving options option')
+    'seed open now cheap budget fancy upscale under within miles mile mi of is are serves serving options option ' +
+    'lunch lunches special specials deal deals combo combos menu')
     .split(' '),
 )
 
@@ -119,6 +124,8 @@ export function parseSearchQuery(raw: string): ParsedQuery {
   }
 
   const openNow = /\bopen now\b|\bopen right now\b|\bstill open\b|\bopen late\b/.test(text)
+  const lunchSpecial = /\blunch(?:time)?\s+(?:specials?|deals?|combos?|menu|prix[-\s]?fixe|plates?)\b|\b(?:cheap|quick|express|business)\s+lunch\b/.test(text)
+  const lunch = lunchSpecial || /\blunch\b/.test(text)
 
   let keyword = ''
   if (!foodCuisines.length && !healthy) {
@@ -140,6 +147,8 @@ export function parseSearchQuery(raw: string): ParsedQuery {
     maxMiles,
     priceLevels,
     openNow,
+    lunchSpecial,
+    lunch,
     keyword,
   }
 }
@@ -160,6 +169,8 @@ export function describeParsedQuery(parsed: ParsedQuery, cuisineLabel: (id: Cuis
   }
   if (parsed.maxMiles) parts.push(`within ${parsed.maxMiles} mi`)
   if (parsed.priceLevels.length) parts.push(parsed.priceLevels.map((l) => '$'.repeat(l)).join('/'))
+  if (parsed.lunchSpecial) parts.push('lunch special')
+  else if (parsed.lunch) parts.push('open for lunch')
   if (parsed.openNow) parts.push('open now')
   return parts
 }

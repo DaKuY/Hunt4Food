@@ -117,8 +117,32 @@ export async function discoverProviderCandidates(
   selectedCuisines: CuisineId[],
   keyword?: string,
   signal?: AbortSignal,
+  extraTerms: string[] = [],
 ): Promise<ProviderCandidate[]> {
-  return fetchProviderCandidates(city, buildDiscoveryTerms(selectedCuisines, keyword), signal)
+  const [main, extra] = await Promise.all([
+    fetchProviderCandidates(city, buildDiscoveryTerms(selectedCuisines, keyword), signal),
+    extraTerms.length ? fetchExtraCandidates(city, extraTerms, signal) : Promise.resolve([]),
+  ])
+  return [...main, ...extra]
+}
+
+/**
+ * Searches like "Mexican lunch special" widen the candidate list, but the phrase
+ * says nothing reliable about a result, so it is not kept as a category or as evidence.
+ */
+async function fetchExtraCandidates(
+  city: CitySelection,
+  terms: string[],
+  signal?: AbortSignal,
+): Promise<ProviderCandidate[]> {
+  const places = await fetchProviderCandidates(city, terms.slice(0, 3), signal).catch(() => [] as ProviderCandidate[])
+  return places.map((place) => ({ ...place, matchedTerm: '' }))
+}
+
+/** Extra discovery phrases for a lunch-special search: "Mexican lunch special", "healthy lunch special". */
+export function lunchSpecialTerms(selectedCuisines: CuisineId[]): string[] {
+  const labels = selectedCuisines.map((id) => (id === 'healthy' ? 'healthy' : cuisineById(id).label)).slice(0, 2)
+  return (labels.length ? labels : ['restaurant']).map((label) => `${label} lunch special`)
 }
 
 /**
@@ -134,12 +158,14 @@ export const HEALTHY_DISCOVERY_TERM_GROUPS: string[][] = [
 export async function discoverHealthyCandidates(
   city: CitySelection,
   signal?: AbortSignal,
+  extraTerms: string[] = [],
 ): Promise<ProviderCandidate[]> {
-  const batches = await Promise.all(
-    HEALTHY_DISCOVERY_TERM_GROUPS.map((terms) =>
+  const batches = await Promise.all([
+    ...HEALTHY_DISCOVERY_TERM_GROUPS.map((terms) =>
       fetchProviderCandidates(city, terms, signal).catch(() => [] as ProviderCandidate[]),
     ),
-  )
+    extraTerms.length ? fetchExtraCandidates(city, extraTerms, signal) : Promise.resolve([] as ProviderCandidate[]),
+  ])
   return batches.flat()
 }
 

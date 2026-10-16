@@ -198,8 +198,15 @@ function applySnippets(
       ...place,
       signals,
       evidenceQuote: evidenceLine(signals) ?? place.evidenceQuote,
+      evidenceText: appendEvidence(place.evidenceText, hits.map((snip) => snip.text ?? '').join(' \n ')),
     }
   })
+}
+
+/** Keep listing, snippet and review text (capped) for evidence checks like seed oils or lunch specials. */
+function appendEvidence(existing: string | undefined, more: string | undefined): string | undefined {
+  if (!more?.trim()) return existing
+  return [existing, more].filter(Boolean).join(' \n ').slice(0, 6000)
 }
 
 function scoreHealthyPlace(
@@ -375,12 +382,13 @@ function attachDiscoverMeta(
     const extraText = [hit?.editorialSummary, hit?.categories?.join(' ')].filter(Boolean).join(' ')
     let signals = place.signals ?? []
     if (extraText) signals = mergeSignals(signals, extractHealthySignals(extraText, 'listing'))
+    const evidenceText = appendEvidence(place.evidenceText, hit?.editorialSummary)
     const hint = hit?.lane ?? place.lane
     const lane = assignHealthyLane(place, signals, hint)
     if (hit?.source === 'yelp' && hit.id && !place.yelpId) {
-      return { ...place, yelpId: hit.id, lane, signals, sourceKind: place.id.startsWith('yelp/') ? 'yelp' : place.sourceKind }
+      return { ...place, yelpId: hit.id, lane, signals, evidenceText, sourceKind: place.id.startsWith('yelp/') ? 'yelp' : place.sourceKind }
     }
-    return { ...place, lane, signals }
+    return { ...place, lane, signals, evidenceText }
   })
 }
 
@@ -401,7 +409,7 @@ function applyReviews(
       ...place,
       signals,
       evidenceQuote: evidenceLine(signals) ?? place.evidenceQuote,
-      evidenceText: list.map((rev) => rev.text ?? '').join(' \n ').slice(0, 4000),
+      evidenceText: appendEvidence(place.evidenceText, list.map((rev) => rev.text ?? '').join(' \n ')),
       reasons: Array.from(
         new Set([
           ...(signals.length
@@ -510,6 +518,8 @@ export async function runHealthyHunt(opts: {
   osmPlaces: Restaurant[]
   /** Narrow the shown list; the cached pool stays complete so focus can change without a new hunt. */
   focus?: HealthyFocusId[]
+  /** Extra provider searches, e.g. "healthy lunch special". */
+  extraDiscoveryTerms?: string[]
   signal?: AbortSignal
   onProgress?: (update: HealthySearchProgress) => void
 }): Promise<{ displayed: RankedRestaurant[]; pool: RankedRestaurant[] }> {
@@ -518,7 +528,7 @@ export async function runHealthyHunt(opts: {
     opts.city,
     opts.selectedCuisines,
     opts.dietary,
-    opts.keyword,
+    [opts.keyword, ...(opts.extraDiscoveryTerms ?? [])].filter(Boolean).join(' | '),
     opts.taste,
   )
   const cached = readCache<{ displayed: RankedRestaurant[]; pool: RankedRestaurant[] }>(key)
@@ -553,7 +563,7 @@ export async function runHealthyHunt(opts: {
   if (remaining() > 1500 && !opts.signal?.aborted) {
     // Name searches (True Food Kitchen, Tropical Smoothie Cafe, grass-fed steak…)
     // run alongside the review-mining proxy; either can fail independently.
-    const providerPromise = discoverHealthyCandidates(opts.city, opts.signal).catch(
+    const providerPromise = discoverHealthyCandidates(opts.city, opts.signal, opts.extraDiscoveryTerms).catch(
       () => [] as ProviderCandidate[],
     )
     try {

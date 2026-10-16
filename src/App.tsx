@@ -17,13 +17,14 @@ import { usePlaceSeedOil } from './hooks/usePlaceSeedOil'
 import { buildSearchShareUrl } from './lib/links'
 import { coordsToCitySelection, searchCities, type GeocodeHit } from './lib/geocode'
 import { describeParsedQuery, parseSearchQuery } from './lib/queryParser'
-import { applySeedOilRequirement } from './lib/seedOilStatus'
+import { lunchVerdict } from './lib/lunch'
+import { applyRequirements } from './lib/seedOilStatus'
 import { ensureCacheGeneration, pruneExpiredCache } from './lib/storage'
 import { attachSeedOilSignals, mineReviewEvidence, pickHealthyLanes, runHealthyHunt } from './lib/healthySearch'
 import { isHealthyFocusId } from './lib/healthySignals'
 import type { PriceLevel } from './lib/priceRange'
 import { fetchRestaurants } from './lib/overpass'
-import { discoverProviderCandidates, mergeProviderCandidates } from './lib/providerDiscovery'
+import { discoverProviderCandidates, lunchSpecialTerms, mergeProviderCandidates } from './lib/providerDiscovery'
 import { rankRestaurants } from './lib/rank'
 import { ratingQualityAdjustment } from './lib/ratings'
 import { seedOilGradeScore } from './lib/seedOil'
@@ -53,6 +54,8 @@ import './App.css'
 const CityStep = lazy(() =>
   import('./components/CityStep').then((m) => ({ default: m.CityStep })),
 )
+
+type LunchFilter = 'special' | 'open' | null
 
 type SearchNavState = {
   onNewCity: () => void
@@ -173,6 +176,13 @@ function SearchFlow() {
   )
   const healthyFocusRef = useRef(healthyFocus)
   healthyFocusRef.current = healthyFocus
+  // "with a lunch special" (verified specials first) or plain "lunch" (hide dinner-only places).
+  const [lunchFilter, setLunchFilter] = useState<LunchFilter>(() => {
+    const value = params.get('lunch')
+    return value === 'special' || value === 'open' ? value : null
+  })
+  const lunchFilterRef = useRef(lunchFilter)
+  lunchFilterRef.current = lunchFilter
   const [maxMiles, setMaxMiles] = useState<number | null>(null)
   const [asking, setAsking] = useState(false)
   const [askMessage, setAskMessage] = useState<{ kind: 'understood' | 'problem'; text: string } | null>(null)
@@ -249,18 +259,32 @@ function SearchFlow() {
     step === 'results' && places.length > 0 && (requireNoSeedOils || healthyMode),
   )
   // "No seed oils": hide places known to use them; verified seed-oil-free places first.
+  // "Lunch special": hide places whose hours show no lunch; verified specials first.
+  const lunchSpecialOnly = lunchFilter === 'special'
   const shownPlaces = useMemo(
-    () => (requireNoSeedOils ? applySeedOilRequirement(places, seedOilMap) : places),
-    [requireNoSeedOils, places, seedOilMap],
+    () =>
+      applyRequirements(
+        places,
+        { noSeedOils: requireNoSeedOils, lunchSpecial: lunchSpecialOnly, lunchService: lunchFilter === 'open' },
+        seedOilMap,
+      ),
+    [requireNoSeedOils, lunchSpecialOnly, lunchFilter, places, seedOilMap],
   )
+  const hiddenCounts = useMemo(() => {
+    if (shownPlaces === places) return { seedOil: 0, lunch: 0 }
+    const shownIds = new Set(shownPlaces.map((p) => p.id))
+    const hidden = places.filter((p) => !shownIds.has(p.id))
+    const lunch = hidden.filter((p) => lunchVerdict(p).status === 'no_lunch').length
+    return { seedOil: hidden.length - lunch, lunch }
+  }, [places, shownPlaces])
 
-  // Outside healthy mode nothing reads reviews, so fetch them once per place for seed-oil evidence
-  // (lard, tallow, avocado oil, "no seed oils", or "fried in canola oil").
+  // Outside healthy mode nothing reads reviews, so fetch them once per place for seed-oil and
+  // lunch-special evidence (lard, tallow, avocado oil, "fried in canola oil", "lunch special").
   const minedIdsRef = useRef(new Set<string>())
   const cityLabelRef = useRef(city?.label ?? '')
   cityLabelRef.current = city?.label ?? ''
   useEffect(() => {
-    if (!requireNoSeedOils || healthyMode || step !== 'results' || !city) return
+    if ((!requireNoSeedOils && !lunchSpecialOnly) || healthyMode || step !== 'results' || !city) return
     const pending = displayPlaces.filter((p) => p.yelpId && !minedIdsRef.current.has(p.id))
     if (!pending.length) return
     pending.forEach((p) => minedIdsRef.current.add(p.id))
@@ -277,7 +301,7 @@ function SearchFlow() {
         }),
       )
     })
-  }, [requireNoSeedOils, healthyMode, step, city, displayPlaces])
+  }, [requireNoSeedOils, lunchSpecialOnly, healthyMode, step, city, displayPlaces])
   const { dishesMap, dishesLoading } = usePlaceDishes(
     places,
     city?.label ?? '',
@@ -399,6 +423,7 @@ function SearchFlow() {
             taste: tasteRef.current,
             osmPlaces: osm,
             focus: healthyFocusRef.current,
+            extraDiscoveryTerms: lunchFilterRef.current === 'special' ? lunchSpecialTerms(food) : [],
             signal: ctrl.signal,
             onProgress: (update) => {
               if (ctrl.signal.aborted) return
@@ -446,6 +471,7 @@ function SearchFlow() {
         food,
         searchKeyword,
         ctrl.signal,
+        lunchFilterRef.current === 'special' ? lunchSpecialTerms(food) : [],
       ).catch(() => [])
 
       let osmPlaces = poolRef.current
@@ -650,9 +676,17 @@ function SearchFlow() {
     }
   }
 
-  function writeSearchParams(food: CuisineId[], diet: DietaryId[], kw: string, focus: HealthyFocusId[]) {
+  function writeSearchParams(
+    food: CuisineId[],
+    diet: DietaryId[],
+    kw: string,
+    focus: HealthyFocusId[],
+    lunch: LunchFilter = lunchFilterRef.current,
+  ) {
     setParams((prev) => {
       const next = new URLSearchParams(prev)
+      if (lunch) next.set('lunch', lunch)
+      else next.delete('lunch')
       if (food.length) next.set('cuisines', food.join(','))
       else next.delete('cuisines')
       next.set('dietary', diet.join(','))
@@ -669,7 +703,12 @@ function SearchFlow() {
   async function askSearch(text: string) {
     const parsed = parseSearchQuery(text)
     if (!parsed.cuisines.length && !parsed.healthy && !parsed.keyword) {
-      setAskMessage({ kind: 'problem', text: 'Add a food or dish, e.g. “Mexican near Coppell TX without seed oils”.' })
+      setAskMessage({
+        kind: 'problem',
+        text: parsed.lunch
+          ? 'Add a food with the lunch, e.g. “healthy lunch special near Coppell TX”.'
+          : 'Add a food or dish, e.g. “Mexican near Coppell TX without seed oils”.',
+      })
       return
     }
     setAsking(true)
@@ -695,6 +734,7 @@ function SearchFlow() {
       const food = normalizeCuisineSelection(parsed.healthy ? ['healthy', ...parsed.cuisines] : parsed.cuisines)
       const diet = Array.from(new Set([...dietary, ...parsed.dietary]))
       const kw = parsed.keyword
+      const lunch: LunchFilter = parsed.lunchSpecial ? 'special' : parsed.lunch ? 'open' : null
       if (selection !== city) confirmCity(selection, true)
       setCuisines(food)
       setDietary(diet)
@@ -704,7 +744,9 @@ function SearchFlow() {
       setMaxMiles(parsed.maxMiles)
       setPriceLevels(parsed.priceLevels)
       setOpenNowOnly(parsed.openNow)
-      writeSearchParams(food, diet, kw, parsed.healthyFocus)
+      setLunchFilter(lunch)
+      lunchFilterRef.current = lunch
+      writeSearchParams(food, diet, kw, parsed.healthyFocus, lunch)
       setAskMessage({
         kind: 'understood',
         text: [...describeParsedQuery({ ...parsed, location: null, nearMe: false }, (id) => cuisineById(id).label), `near ${selection.label}`].join(' · '),
@@ -822,7 +864,15 @@ function SearchFlow() {
         <ResultsStep
           places={shownPlaces}
           seedOilRequired={requireNoSeedOils}
-          seedOilHiddenCount={places.length - shownPlaces.length}
+          seedOilHiddenCount={hiddenCounts.seedOil}
+          lunchFilter={lunchFilter}
+          lunchHiddenCount={hiddenCounts.lunch}
+          onToggleLunchSpecial={() => {
+            const next: LunchFilter = lunchFilter === 'special' ? null : 'special'
+            setLunchFilter(next)
+            lunchFilterRef.current = next
+            writeSearchParams(cuisines, dietary, keyword, healthyFocus, next)
+          }}
           cityLabel={city.label}
           cityCenter={city.center}
           cuisineLabels={cuisineLabels}
