@@ -4,6 +4,8 @@ import L from 'leaflet'
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png'
 import markerIcon from 'leaflet/dist/images/marker-icon.png'
 import markerShadow from 'leaflet/dist/images/marker-shadow.png'
+import { describeParsedQuery, parseSearchQuery } from '../lib/queryParser'
+import { cuisineById } from '../data/cuisines'
 import { coordsToCitySelection, reverseGeocode, searchCities, type GeocodeHit } from '../lib/geocode'
 import { loadRecentCities, pushRecentCity, recentToCitySelection, type RecentCity } from '../lib/taste'
 import type { CitySelection, MapBounds } from '../lib/types'
@@ -18,6 +20,8 @@ L.Icon.Default.mergeOptions({
 
 type Props = {
   onConfirm: (city: CitySelection) => void
+  /** A whole search typed here ("healthy food in Coppell TX"): move there and search. */
+  onAsk?: (text: string) => void
   onBack: () => void
   initial?: CitySelection | null
 }
@@ -44,7 +48,14 @@ function BoundsWatcher({ onBounds }: { onBounds: (b: MapBounds, center: { lat: n
   return null
 }
 
-export function CityStep({ onConfirm, onBack, initial }: Props) {
+/** A food plus a place ("healthy food in Coppell TX"), not just a city name. */
+function searchInCityBox(query: string) {
+  const parsed = parseSearchQuery(query)
+  if (!parsed.location || (!parsed.healthy && !parsed.cuisines.length && !parsed.keyword)) return null
+  return describeParsedQuery(parsed, (id) => cuisineById(id).label).join(' · ')
+}
+
+export function CityStep({ onConfirm, onAsk, onBack, initial }: Props) {
   const lastRecent = initial ? null : loadRecentCities()[0]
   const [query, setQuery] = useState(initial?.label ?? lastRecent?.label ?? '')
   const [hits, setHits] = useState<GeocodeHit[]>([])
@@ -63,6 +74,7 @@ export function CityStep({ onConfirm, onBack, initial }: Props) {
     return [40.7128, -74.006]
   })
   const [mapKey, setMapKey] = useState(0)
+  const askable = Boolean(onAsk)
   const skipSearchRef = useRef(Boolean(initial?.label || lastRecent))
 
   function applyLocation(city: CitySelection) {
@@ -80,7 +92,7 @@ export function CityStep({ onConfirm, onBack, initial }: Props) {
       setHits([])
       return
     }
-    if (query.trim().length < 2) {
+    if (query.trim().length < 2 || (askable && searchInCityBox(query))) {
       setHits([])
       return
     }
@@ -101,7 +113,9 @@ export function CityStep({ onConfirm, onBack, initial }: Props) {
       clearTimeout(t)
       ctrl.abort()
     }
-  }, [query])
+  }, [query, askable])
+
+  const fullSearch = useMemo(() => searchInCityBox(query), [query])
 
   function scrollToTop() {
     window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -199,10 +213,18 @@ export function CityStep({ onConfirm, onBack, initial }: Props) {
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && onAsk && fullSearch) onAsk(query.trim())
+          }}
           placeholder="e.g. Austin, Tokyo, Brooklyn"
           autoComplete="off"
         />
       </label>
+      {onAsk && fullSearch ? (
+        <button type="button" className="btn primary" onClick={() => onAsk(query.trim())}>
+          Search {fullSearch}
+        </button>
+      ) : null}
 
       <button
         type="button"

@@ -83,4 +83,17 @@ describe('parseSearchQuery lunch', () => {
     const q = parseSearchQuery('lunch specials near Coppell TX')
     expect(q).toMatchObject({ lunchSpecial: true, location: 'coppell tx', keyword: '', cuisines: [] })
   })
+
+  it('reads the city with or without "in" / "near"', () => {
+    for (const q of ['healthy food in Coppell TX', 'healthy food in coppell, tx', 'Healthy food Coppell TX', 'healthy food Coppell, TX']) {
+      const parsed = parseSearchQuery(q)
+      expect(parsed, q).toMatchObject({ healthy: true, location: 'coppell tx', keyword: '', cuisines: [] })
+    }
+    expect(parseSearchQuery('healthy salmon Frisco Texas')).toMatchObject({ healthy: true, location: 'frisco texas', healthyFocus: ['seafood'] })
+    expect(parseSearchQuery('mexican restaurant new york ny')).toMatchObject({ cuisines: ['mexican'], location: 'new york ny' })
+    expect(parseSearchQuery('tacos al pastor')).toMatchObject({ location: null })
+    expect(parseSearchQuery('steak or salmon')).toMatchObject({ location: null })
+    expect(parseSearchQuery('pizza Portland OR')).toMatchObject({ location: 'portland or' })
+    expect(parseSearchQuery('healthy food near me')).toMatchObject({ location: null, nearMe: true })
+  })
 })
