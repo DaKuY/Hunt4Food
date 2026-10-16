@@ -117,6 +117,34 @@ describe('rankRestaurants', () => {
   })
 })
 
+describe('dish searches like "chicken strips"', () => {
+  const opts = { center: { lat: 32.95, lon: -96.99 }, selectedCuisines: [], dietary: [], taste, limit: 10 }
+
+  it('finds tenders, fingers and chicken places, including counter service, but not unrelated fast food', () => {
+    const ranked = rankRestaurants(
+      [
+        place({ id: 'canes', name: "Raising Cane's Chicken Fingers", amenity: 'fast_food', cuisines: ['chicken'] }),
+        place({ id: 'huey', name: "Huey Magoo's Chicken Tenders", amenity: 'fast_food', cuisines: [] }),
+        place({ id: 'chicken-house', name: 'Coppell Chicken House', amenity: 'restaurant', cuisines: ['chicken'] }),
+        place({ id: 'mcd', name: "McDonald's", amenity: 'fast_food', cuisines: ['burger'] }),
+        place({ id: 'pizza', name: 'Coppell Pizza Co', amenity: 'restaurant', cuisines: ['pizza'] }),
+      ],
+      { ...opts, keyword: 'chicken strips' },
+    )
+    expect(ranked.map((p) => p.id).sort()).toEqual(['canes', 'chicken-house', 'huey'])
+    expect(ranked.slice(0, 2).map((p) => p.id).sort()).toEqual(['canes', 'huey'])
+    expect(ranked.find((p) => p.id === 'canes')?.reasons).toContain('Counter service / fast food')
+  })
+
+  it('still keeps fast food out of other keyword searches', () => {
+    const ranked = rankRestaurants(
+      [place({ id: 'canes', name: "Raising Cane's Chicken Fingers", amenity: 'fast_food', cuisines: ['chicken'] })],
+      { ...opts, keyword: 'chicken' },
+    )
+    expect(ranked).toEqual([])
+  })
+})
+
 describe('onlyMatchingCuisines', () => {
   const at = (name: string, cuisines: string[]) => ({ id: name, name, lat: 32.95, lon: -97.01, cuisines, amenity: 'restaurant' })
   const opts = (onlyMatchingCuisines: boolean) => ({

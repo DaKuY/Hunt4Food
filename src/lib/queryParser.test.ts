@@ -92,6 +92,7 @@ describe('parseSearchQuery lunch', () => {
     expect(parseSearchQuery('healthy salmon Frisco Texas')).toMatchObject({ healthy: true, location: 'frisco texas', healthyFocus: ['seafood'] })
     expect(parseSearchQuery('mexican restaurant new york ny')).toMatchObject({ cuisines: ['mexican'], location: 'new york ny' })
     expect(parseSearchQuery('tacos al pastor')).toMatchObject({ location: null })
+    expect(parseSearchQuery('chicken strips in Coppell TX')).toMatchObject({ keyword: 'chicken strips', cuisines: [], location: 'coppell tx' })
     expect(parseSearchQuery('steak or salmon')).toMatchObject({ location: null })
     expect(parseSearchQuery('pizza Portland OR')).toMatchObject({ location: 'portland or' })
     expect(parseSearchQuery('healthy food near me')).toMatchObject({ location: null, nearMe: true })
