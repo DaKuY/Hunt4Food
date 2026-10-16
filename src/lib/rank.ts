@@ -1,6 +1,6 @@
 import { cuisineById } from '../data/cuisines'
 import { matchKnownChain } from './healthySignals'
-import { keywordBoost } from './keyword'
+import { dishSearchAllowsFastFood, keywordBoost } from './keyword'
 import { seedOilGradeScore, type SeedOilInfo } from './seedOil'
 import type {
   CuisineId,
@@ -314,11 +314,13 @@ export function rankRestaurants(
   const exclude = opts.excludeIds ? new Set(opts.excludeIds) : null
   let pool = exclude ? places.filter((p) => !exclude.has(p.id)) : places
 
-  // Hunt4Food never recommends fast food. Keep excludeFastFood in the options type
-  // for backwards compatibility with existing callers, but the exclusion is global.
-  pool = pool.filter((p) => !isFastFood(p))
-
   const keywordOnly = opts.selectedCuisines.length === 0 && Boolean(opts.keyword?.trim())
+  // Hunt4Food doesn't recommend fast food (excludeFastFood stays in the options type for
+  // older callers). The exception is a dish search like "chicken strips", where most of
+  // the places that serve it are counter service; only places matching the dish pass.
+  const fastFoodDish = keywordOnly && dishSearchAllowsFastFood(opts.keyword!)
+  pool = pool.filter((p) => !isFastFood(p) || (fastFoodDish && keywordBoost(p, opts.keyword!).points > 0))
+
   if (keywordOnly) {
     pool = pool.filter((p) => keywordBoost(p, opts.keyword!).points > 0)
   } else if (opts.onlyMatchingCuisines && opts.selectedCuisines.length) {
@@ -335,6 +337,7 @@ export function rankRestaurants(
       score += kw.points
       if (kw.points > 0) score += 18
       reasons.push(...kw.reasons)
+      if (fastFoodDish && isFastFood(place)) reasons.push('Counter service / fast food')
     } else {
       const matched = opts.selectedCuisines.filter((c) => matchesCuisine(place, c))
       if (matched.length) {

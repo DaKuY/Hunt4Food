@@ -95,7 +95,11 @@ describe('healthy discovery', () => {
     const query = buildAreaQuery({ south: 30.2, west: -97.8, north: 30.3, east: -97.7 }, true)
     expect(query).toMatch(/\["amenity"="fast_food"\]\["name"~"[^"]*tropical smoothie[^"]*pure green[^"]*",i\]/)
     expect(query).toContain('["amenity"="fast_food"]["cuisine"~"juice|smoothie|salad|acai",i]')
-    expect(buildAreaQuery({ south: 30.2, west: -97.8, north: 30.3, east: -97.7 })).not.toContain('fast_food')
+    // The plain query only adds chicken-finger and wing counters, for "chicken strips" searches.
+    const plain = buildAreaQuery({ south: 30.2, west: -97.8, north: 30.3, east: -97.7 })
+    expect(plain.match(/fast_food/g)).toHaveLength(2)
+    expect(plain).toContain('["amenity"="fast_food"]["cuisine"~"chicken|wings",i]')
+    expect(plain).not.toContain('smoothie')
   })
 
   afterEach(() => vi.unstubAllGlobals())

@@ -31,13 +31,21 @@ const HEALTHY_CHAIN_NAME_PATTERN = KNOWN_HEALTHY_CHAINS.flatMap((chain) => chain
   .map((alias) => alias.replace(/[^a-z0-9 ]/gi, ''))
   .join('|')
 
+const CHICKEN_NAME_PATTERN = 'chicken|tenders|wings|wingstop|raising cane|guthrie|huey magoo|zaxby|golden chick|layne'
+
 export function buildAreaQuery(bounds: MapBounds, includeJuiceShops = false): string {
   const { south, west, north, east } = bounds
   const bbox = `${south},${west},${north},${east}`
   if (!includeJuiceShops) {
+    // Chicken-finger and wing spots are almost all amenity=fast_food; they are kept out of
+    // results except for dish searches like "chicken strips" (see rankRestaurants).
     return `
 [out:json][timeout:${QUERY_TIMEOUT_SEC}];
-nwr["amenity"~"^(restaurant|cafe|ice_cream|food_court)$"](${bbox});
+(
+  nwr["amenity"~"^(restaurant|cafe|ice_cream|food_court)$"](${bbox});
+  nwr["amenity"="fast_food"]["cuisine"~"chicken|wings",i](${bbox});
+  nwr["amenity"="fast_food"]["name"~"${CHICKEN_NAME_PATTERN}",i](${bbox});
+);
 out center tags ${RESULT_CAP};
 `.trim()
   }
@@ -112,7 +120,7 @@ function cacheKey(bounds: MapBounds, includeJuiceShops = false): string {
   const b = [bounds.south, bounds.west, bounds.north, bounds.east]
     .map((n) => n.toFixed(3))
     .join(',')
-  return `overpass:v7:area:${includeJuiceShops ? 'healthy:' : ''}${b}`
+  return `overpass:v8:area:${includeJuiceShops ? 'healthy:' : ''}${b}`
 }
 
 function isAbortError(e: unknown): boolean {

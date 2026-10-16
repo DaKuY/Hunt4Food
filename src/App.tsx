@@ -700,8 +700,13 @@ function SearchFlow() {
   }
 
   /** Plain-language search: parse, find the place, set every filter, then search. */
-  async function askSearch(text: string) {
+  async function askSearch(text: string, picked: CuisineId[] = []) {
     const parsed = parseSearchQuery(text)
+    // "in Dallas" typed under foods already picked with the chips keeps those foods.
+    if (!parsed.cuisines.length && !parsed.healthy && !parsed.keyword && picked.length) {
+      parsed.healthy = picked.includes('healthy')
+      parsed.cuisines = picked.filter((id) => id !== 'healthy')
+    }
     if (!parsed.cuisines.length && !parsed.healthy && !parsed.keyword) {
       setAskMessage({
         kind: 'problem',
@@ -759,6 +764,11 @@ function SearchFlow() {
   }
 
   function startFind() {
+    // "healthy food in Coppell TX" typed in the keyword box: move there and search, like the ask bar.
+    if (parseSearchQuery(keyword).location) {
+      void askSearch(keyword, cuisines)
+      return
+    }
     if (!city || !hasSearchCriteria(cuisines, keyword)) return
     setScrollToResultsKey((k) => k + 1)
     writeSearchParams(cuisines, dietary, keyword, healthyFocus)
@@ -841,7 +851,12 @@ function SearchFlow() {
           </section>
         ) : (
           <Suspense fallback={<p className="muted">Loading map…</p>}>
-            <CityStep onConfirm={(selection) => confirmCity(selection, true)} onBack={leaveToLodge} initial={city} />
+            <CityStep
+              onConfirm={(selection) => confirmCity(selection, true)}
+              onAsk={(text) => void askSearch(text)}
+              onBack={leaveToLodge}
+              initial={city}
+            />
           </Suspense>
         )
       )}

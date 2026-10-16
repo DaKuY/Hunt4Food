@@ -30,6 +30,14 @@ const LOCATION_STOP =
   '(?:that|which|who|where|with|without|w/o|and|but|under|below|less|within|open|serving|for|doesn\'?t|does not|don\'?t|do not|no|not|using|cooked|cheap|budget|fancy|upscale)'
 const LOCATION = new RegExp(`\\b(?:near|in|around|by|close to|nearby)\\s+(.+?)(?=\\s+${LOCATION_STOP}\\b|[.!?;]|$)`)
 
+const STATE_CODES =
+  'al ak az ar ca co ct de fl ga hi id il in ia ks ky la me md ma mi mn ms mo mt ne nv nh nj nm ny nc nd oh ok or pa ri sc sd tn tx ut vt va wa wv wi wy dc'
+const STATE_NAMES =
+  'alabama|alaska|arizona|arkansas|california|colorado|connecticut|delaware|florida|georgia|hawaii|idaho|illinois|indiana|iowa|kansas|kentucky|louisiana|maine|maryland|massachusetts|michigan|minnesota|mississippi|missouri|montana|nebraska|nevada|new hampshire|new jersey|new mexico|new york|north carolina|north dakota|ohio|oklahoma|oregon|pennsylvania|rhode island|south carolina|south dakota|tennessee|texas|utah|vermont|virginia|washington|west virginia|wisconsin|wyoming'
+const AMBIGUOUS_STATES = new Set(['in', 'me', 'or', 'hi', 'ok', 'oh'])
+/** "... Coppell TX" / "... Frisco Texas" with no "in"/"near": a trailing US state marks the place. */
+const TRAILING_STATE = new RegExp(`\\s((?:${STATE_CODES.split(' ').join('|')})|${STATE_NAMES})$`)
+
 const DIETARY_RULES: Array<{ id: DietaryId; pattern: RegExp }> = [
   {
     id: 'no_seed_oils',
@@ -69,6 +77,15 @@ function matchesWord(text: string, phrase: string): boolean {
   return new RegExp(`\\b${escapeRegExp(phrase.toLowerCase())}s?\\b`).test(text)
 }
 
+/** Words that name food, so "healthy salmon Dallas TX" keeps "salmon" out of the city. */
+function isFoodWord(word: string): boolean {
+  if (/^(?:healthy|healthier|clean|organic|grass|fed|vegan|vegetarian|gluten|halal|keto|paleo|smoothies?|juice|salads?|bowls?|steaks?|salmon|fish|seafood|tacos?|burgers?|pizza|sushi|bbq|brunch|breakfast|dinner|coffee|cafe)$/.test(word)) return true
+  return CUISINES.some(
+    (cuisine) =>
+      matchesWord(word, cuisine.label) || cuisine.keywords.some((keyword) => !keyword.includes(' ') && matchesWord(word, keyword)),
+  )
+}
+
 function snapMiles(miles: number): number {
   return [1, 3, 5, 10].find((choice) => miles <= choice) ?? 10
 }
@@ -86,6 +103,27 @@ export function parseSearchQuery(raw: string): ParsedQuery {
     else nearMe = true
     // Keep cuisine words inside the place name ("near Salmon St") out of the food match.
     text = text.replace(locationMatch[0], ' ')
+  }
+
+  if (!location) {
+    const state = text.match(TRAILING_STATE)
+    // "in", "me", "or", "hi", "ok", "oh" are words too: only a state when written "IN" or ", in".
+    const ambiguous = state && AMBIGUOUS_STATES.has(state[1]!) && !new RegExp(`(?:,\\s*${state[1]}|\\b${state[1]!.toUpperCase()})\\s*$`).test(raw.trim())
+    if (state && state.index !== undefined && !ambiguous) {
+      // Walk back over the city name: stop at the first word that means food or filler.
+      const before = text.slice(0, state.index).split(' ')
+      const city: string[] = []
+      while (before.length && city.length < 3) {
+        const word = before[before.length - 1]!
+        if (FILLER.has(word) || isFoodWord(word)) break
+        city.unshift(before.pop()!)
+      }
+      if (city.length) {
+        location = `${city.join(' ')} ${state[1]}`
+        nearMe = false
+        text = before.join(' ')
+      }
+    }
   }
 
   const dietary = DIETARY_RULES.filter((rule) => rule.pattern.test(text)).map((rule) => rule.id)
