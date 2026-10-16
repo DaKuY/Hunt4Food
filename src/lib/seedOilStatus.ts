@@ -1,4 +1,5 @@
 import { signalSourceLabel } from './healthySignals'
+import { lunchVerdict } from './lunch'
 import type { SeedOilInfo } from './seedOil'
 import type { HealthySignal, Restaurant } from './types'
 
@@ -58,4 +59,40 @@ export function applySeedOilRequirement<T extends Restaurant & { signals?: Healt
     ...withVerdict.filter((row) => row.verdict.status === 'free'),
     ...withVerdict.filter((row) => row.verdict.status === 'unknown'),
   ].map((row) => row.place)
+}
+
+export type SearchRequirements = {
+  noSeedOils: boolean
+  /** "with a lunch special": verified specials first. */
+  lunchSpecial: boolean
+  /** Plain "lunch": only hide places whose hours show no lunch service. */
+  lunchService?: boolean
+}
+
+/**
+ * Every hard requirement in one pass: hide places that fail one (known seed
+ * oils, no lunch service), then order by how many requirements are verified,
+ * keeping the existing ranking within each group.
+ */
+export function applyRequirements<T extends Restaurant & { signals?: HealthySignal[]; evidenceText?: string }>(
+  places: T[],
+  requirements: SearchRequirements,
+  infoById: Record<string, SeedOilInfo | undefined>,
+): T[] {
+  if (!requirements.noSeedOils && !requirements.lunchSpecial && !requirements.lunchService) return places
+  const rows = places.flatMap((place, index) => {
+    let verified = 0
+    if (requirements.noSeedOils) {
+      const status = seedOilVerdict(place, infoById[place.id]).status
+      if (status === 'uses') return []
+      if (status === 'free') verified++
+    }
+    if (requirements.lunchSpecial || requirements.lunchService) {
+      const status = lunchVerdict(place).status
+      if (status === 'no_lunch') return []
+      if (requirements.lunchSpecial && status === 'special') verified++
+    }
+    return [{ place, verified, index }]
+  })
+  return rows.sort((a, b) => b.verified - a.verified || a.index - b.index).map((row) => row.place)
 }

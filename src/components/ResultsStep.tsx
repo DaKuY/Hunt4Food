@@ -14,6 +14,7 @@ import { FIRST_RESULT_ID, scrollToFirstResult } from '../lib/scroll'
 import type { PlaceRatings } from '../lib/ratings'
 import { formatDistanceMiles, isProbablyOpenNow } from '../lib/rank'
 import type { SeedOilInfo } from '../lib/seedOil'
+import { lunchVerdict } from '../lib/lunch'
 import { seedOilVerdict } from '../lib/seedOilStatus'
 import type { HealthyFocusId, RankedRestaurant } from '../lib/types'
 import { RatingsRow } from './RatingsRow'
@@ -28,6 +29,11 @@ type Props = {
   seedOilRequired?: boolean
   /** Places removed because they are known to use seed oils. */
   seedOilHiddenCount?: number
+  /** "special": the search asked for a lunch special; "open": just lunch service. */
+  lunchFilter?: 'special' | 'open' | null
+  /** Places removed because their hours show no lunch service. */
+  lunchHiddenCount?: number
+  onToggleLunchSpecial?: () => void
   cityLabel: string
   cityCenter: { lat: number; lon: number }
   cuisineLabels: string[]
@@ -78,6 +84,9 @@ export function ResultsStep({
   places,
   seedOilRequired = false,
   seedOilHiddenCount = 0,
+  lunchFilter = null,
+  lunchHiddenCount = 0,
+  onToggleLunchSpecial,
   cityLabel,
   cityCenter,
   cuisineLabels,
@@ -209,6 +218,7 @@ export function ResultsStep({
           )}
           {place.evidenceQuote ? <p className="evidence-quote">{place.evidenceQuote}</p> : null}
           {seedOilRequired ? <SeedOilLine verdict={seedOilVerdict(place, seedOil)} checking={seedOilLoading && !seedOil} /> : null}
+          {lunchFilter === 'special' ? <LunchLine verdict={lunchVerdict(place)} /> : null}
           {seedOil?.grade ? (
             <p className="seed-oil-badge">
               <a href={safeExternalUrl(seedOil.url, 'https://seedoiltracker.com')} target="_blank" rel="noreferrer" title={seedOil.cookingOil ?? undefined}>
@@ -329,6 +339,9 @@ export function ResultsStep({
       {seedOilRequired && places.length > 0 ? (
         <SeedOilSummary places={places} seedOilMap={seedOilMap} hidden={seedOilHiddenCount} />
       ) : null}
+      {lunchFilter && places.length > 0 ? (
+        <LunchSummary places={places} hidden={lunchHiddenCount} specialRequired={lunchFilter === 'special'} />
+      ) : null}
       {healthyMode && searchStatus ? (
         <p className="healthy-status" aria-live="polite">
           {searchStatus}
@@ -399,6 +412,16 @@ export function ResultsStep({
         <button type="button" className={`chip ghost ${openNowOnly ? 'on' : ''}`} onClick={onToggleOpenNow}>
           Prefer open now
         </button>
+        {onToggleLunchSpecial ? (
+          <button
+            type="button"
+            className={`chip ghost ${lunchFilter === 'special' ? 'on' : ''}`}
+            aria-pressed={lunchFilter === 'special'}
+            onClick={onToggleLunchSpecial}
+          >
+            Lunch special
+          </button>
+        ) : null}
         <button
           type="button"
           className={`chip ghost ${hasWebsiteOnly ? 'on' : ''}`}
@@ -551,6 +574,44 @@ function SeedOilSummary({
       {hidden ? ` · ${hidden} hidden (known to use seed oils)` : ''}. Verified means Seed Oil Tracker or a review or
       listing says so (e.g. cooks with lard, tallow or avocado oil). Most restaurants don&apos;t publish their cooking oil,
       so unverified places are shown after verified ones — not as seed-oil free.
+    </p>
+  )
+}
+
+function LunchLine({ verdict }: { verdict: ReturnType<typeof lunchVerdict> }) {
+  if (verdict.status === 'special') {
+    return <p className="seed-oil-verdict free">🍽 Lunch special — {verdict.evidence}</p>
+  }
+  return (
+    <p className="seed-oil-verdict unknown">
+      ? Lunch special not verified{verdict.lunchHours ? ` — open for lunch (${verdict.lunchHours})` : ''} — call or check the menu
+    </p>
+  )
+}
+
+function LunchSummary({
+  places,
+  hidden,
+  specialRequired,
+}: {
+  places: RankedRestaurant[]
+  hidden: number
+  specialRequired: boolean
+}) {
+  const hiddenText = hidden ? ` · ${hidden} hidden (hours show no lunch service)` : ''
+  if (!specialRequired) {
+    return (
+      <p className="banner seed-oil-summary" aria-live="polite">
+        <strong>Open for lunch:</strong> places whose hours show no lunch service are hidden{hiddenText}.
+      </p>
+    )
+  }
+  const verified = places.filter((place) => lunchVerdict(place).status === 'special').length
+  return (
+    <p className="banner seed-oil-summary" aria-live="polite">
+      <strong>Lunch special:</strong> {verified} verified · {places.length - verified} not verified{hiddenText}. Verified
+      means a review, snippet or listing mentions a lunch special or lunch deal (quoted on the card). Few places list
+      their specials online, so unverified places are shown after verified ones — not as having a special.
     </p>
   )
 }

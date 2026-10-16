@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { extractHealthySignals } from './healthySignals'
 import type { SeedOilInfo } from './seedOil'
-import { applySeedOilRequirement, seedOilVerdict } from './seedOilStatus'
+import { applyRequirements, applySeedOilRequirement, seedOilVerdict } from './seedOilStatus'
 import type { Restaurant } from './types'
 
 const place = (id: string, extra: Partial<Restaurant & { signals: ReturnType<typeof extractHealthySignals>; evidenceText: string }> = {}) => ({
@@ -44,5 +44,24 @@ describe('applySeedOilRequirement', () => {
     ]
     const result = applySeedOilRequirement(places, { 'graded-f': grade('F'), 'graded-a': grade('A') })
     expect(result.map((p) => p.id)).toEqual(['lard', 'graded-a', 'unknown-1', 'unknown-2'])
+  })
+})
+
+describe('applyRequirements', () => {
+  it('combines no seed oils and lunch special: hides failures, best-verified first', () => {
+    const places = [
+      place('nothing-known'),
+      place('lunch-only', { evidenceText: 'Weekday lunch specials are great.' }),
+      place('both', { evidenceText: 'Lunch special bowls, and they cook with avocado oil.', signals: extractHealthySignals('cook with avocado oil', 'yelp_review') }),
+      place('dinner-only', { openingHours: 'Mo-Su 17:00-22:00' }),
+      place('fryer', { evidenceText: 'Everything is fried in canola oil.' }),
+    ]
+    const result = applyRequirements(places, { noSeedOils: true, lunchSpecial: true }, {})
+    expect(result.map((p) => p.id)).toEqual(['both', 'lunch-only', 'nothing-known'])
+  })
+
+  it('is a no-op with no requirements', () => {
+    const places = [place('a'), place('b')]
+    expect(applyRequirements(places, { noSeedOils: false, lunchSpecial: false }, {})).toBe(places)
   })
 })

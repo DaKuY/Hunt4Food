@@ -64,3 +64,23 @@ describe('parseSearchQuery keyword cuisines', () => {
     expect(parseSearchQuery('best taqueria in Lewisville').cuisines).toEqual(['tacos'])
   })
 })
+
+describe('parseSearchQuery lunch', () => {
+  it('understands the healthy + no seed oils + lunch special request', () => {
+    const q = parseSearchQuery('Healthy food no seed oils with a lunch special')
+    expect(q).toMatchObject({ healthy: true, dietary: ['no_seed_oils'], lunchSpecial: true, lunch: true, keyword: '', cuisines: [] })
+    expect(describeParsedQuery(q, (id) => cuisineById(id).label)).toEqual(['Healthy', 'no seed oils', 'lunch special'])
+  })
+
+  it('treats deals and combos as specials, and plain lunch as lunch hours only', () => {
+    expect(parseSearchQuery('thai lunch deals near Irving').lunchSpecial).toBe(true)
+    expect(parseSearchQuery('sushi lunch combo in Plano').lunchSpecial).toBe(true)
+    const plain = parseSearchQuery('healthy lunch near me')
+    expect(plain).toMatchObject({ lunch: true, lunchSpecial: false, nearMe: true })
+  })
+
+  it('allows a lunch-special search with no food named', () => {
+    const q = parseSearchQuery('lunch specials near Coppell TX')
+    expect(q).toMatchObject({ lunchSpecial: true, location: 'coppell tx', keyword: '', cuisines: [] })
+  })
+})
