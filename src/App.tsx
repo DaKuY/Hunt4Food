@@ -20,7 +20,7 @@ import { describeParsedQuery, parseSearchQuery } from './lib/queryParser'
 import { lunchVerdict } from './lib/lunch'
 import { applyRequirements } from './lib/seedOilStatus'
 import { ensureCacheGeneration, pruneExpiredCache } from './lib/storage'
-import { attachSeedOilSignals, mineReviewEvidence, pickHealthyLanes, runHealthyHunt } from './lib/healthySearch'
+import { attachSeedOilSignals, mineReviewEvidence, pickHealthyLanes, runHealthyHunt, type HealthyPrefs } from './lib/healthySearch'
 import { isHealthyFocusId } from './lib/healthySignals'
 import type { PriceLevel } from './lib/priceRange'
 import { fetchRestaurants } from './lib/overpass'
@@ -176,6 +176,13 @@ function SearchFlow() {
   )
   const healthyFocusRef = useRef(healthyFocus)
   healthyFocusRef.current = healthyFocus
+  // "no smoothies" (avoid) and "fast lunch" (quick) from a typed search.
+  const [healthyPrefs, setHealthyPrefs] = useState<HealthyPrefs>(() => ({
+    avoid: (params.get('avoid') ?? '').split(',').filter(isHealthyFocusId),
+    quick: params.get('quick') === '1',
+  }))
+  const healthyPrefsRef = useRef(healthyPrefs)
+  healthyPrefsRef.current = healthyPrefs
   // "with a lunch special" (verified specials first) or plain "lunch" (hide dinner-only places).
   const [lunchFilter, setLunchFilter] = useState<LunchFilter>(() => {
     const value = params.get('lunch')
@@ -346,7 +353,7 @@ function SearchFlow() {
       })
 
       return healthyMode
-        ? pickHealthyLanes(scored, scored.length)
+        ? pickHealthyLanes(scored, scored.length, undefined, [], healthyPrefsRef.current)
         : [...scored].sort((a, b) => b.score - a.score)
     })
   }, [ratingsMap, healthyMode, displayPlaces.length])
@@ -384,7 +391,7 @@ function SearchFlow() {
 
       const withSignals = attachSeedOilSignals(scored, seedOilMap)
       return healthyMode
-        ? pickHealthyLanes(withSignals, withSignals.length)
+        ? pickHealthyLanes(withSignals, withSignals.length, undefined, [], healthyPrefsRef.current)
         : [...withSignals].sort((a, b) => b.score - a.score)
     })
   }, [dietary, healthyMode, seedOilMap, seedOilLoading, displayPlaces.length])
@@ -423,6 +430,7 @@ function SearchFlow() {
             taste: tasteRef.current,
             osmPlaces: osm,
             focus: healthyFocusRef.current,
+            prefs: healthyPrefsRef.current,
             extraDiscoveryTerms: lunchFilterRef.current === 'special' ? lunchSpecialTerms(food) : [],
             signal: ctrl.signal,
             onProgress: (update) => {
@@ -542,7 +550,7 @@ function SearchFlow() {
       const fresh =
         slots > 0
           ? cuisines.includes('healthy') && healthyPoolRef.current.length
-            ? pickHealthyLanes(healthyPoolRef.current, slots, nextSeen, healthyFocus)
+            ? pickHealthyLanes(healthyPoolRef.current, slots, nextSeen, healthyFocus, healthyPrefsRef.current)
             : rankRestaurants(pool, {
                 onlyMatchingCuisines: true,
                 center: city.center,
@@ -660,20 +668,35 @@ function SearchFlow() {
   }
 
   /** On results, re-pick from the healthy pool already fetched: no new search needed. */
-  function changeHealthyFocus(next: HealthyFocusId[]) {
+  function changeHealthyFocus(next: HealthyFocusId[], nextPrefs?: HealthyPrefs) {
+    // "All healthy" also drops "no smoothies"; picking Smoothies lifts that one exclusion.
+    const prefs: HealthyPrefs = nextPrefs ?? {
+      ...healthyPrefs,
+      avoid: next.length ? (healthyPrefs.avoid ?? []).filter((id) => !next.includes(id)) : [],
+    }
     setHealthyFocus(next)
+    setHealthyPrefs(prefs)
+    healthyPrefsRef.current = prefs
     setParams((prev) => {
       const params = new URLSearchParams(prev)
       if (next.length) params.set('focus', next.join(','))
       else params.delete('focus')
+      writePrefsParams(params, prefs)
       return params
     }, { replace: true })
     if (step === 'results' && healthyPoolRef.current.length) {
-      const picked = pickHealthyLanes(healthyPoolRef.current, 10, undefined, next)
+      const picked = pickHealthyLanes(healthyPoolRef.current, 10, undefined, next, prefs)
       setDisplayPlaces(picked)
       setSeenIds(new Set(picked.map((p) => p.id)))
       setFavoriteIds(new Set())
     }
+  }
+
+  function writePrefsParams(params: URLSearchParams, prefs: HealthyPrefs) {
+    if (prefs.avoid?.length) params.set('avoid', prefs.avoid.join(','))
+    else params.delete('avoid')
+    if (prefs.quick) params.set('quick', '1')
+    else params.delete('quick')
   }
 
   function writeSearchParams(
@@ -682,9 +705,11 @@ function SearchFlow() {
     kw: string,
     focus: HealthyFocusId[],
     lunch: LunchFilter = lunchFilterRef.current,
+    prefs: HealthyPrefs = healthyPrefsRef.current,
   ) {
     setParams((prev) => {
       const next = new URLSearchParams(prev)
+      writePrefsParams(next, food.includes('healthy') ? prefs : {})
       if (lunch) next.set('lunch', lunch)
       else next.delete('lunch')
       if (food.length) next.set('cuisines', food.join(','))
@@ -751,7 +776,10 @@ function SearchFlow() {
       setOpenNowOnly(parsed.openNow)
       setLunchFilter(lunch)
       lunchFilterRef.current = lunch
-      writeSearchParams(food, diet, kw, parsed.healthyFocus, lunch)
+      const prefs: HealthyPrefs = { avoid: parsed.healthyAvoid, quick: parsed.quick }
+      setHealthyPrefs(prefs)
+      healthyPrefsRef.current = prefs
+      writeSearchParams(food, diet, kw, parsed.healthyFocus, lunch, prefs)
       setAskMessage({
         kind: 'understood',
         text: [...describeParsedQuery({ ...parsed, location: null, nearMe: false }, (id) => cuisineById(id).label), `near ${selection.label}`].join(' · '),
@@ -901,6 +929,8 @@ function SearchFlow() {
           hasWebsiteOnly={hasWebsiteOnly}
           healthyFocus={healthyFocus}
           onHealthyFocusChange={changeHealthyFocus}
+          healthyPrefs={healthyPrefs}
+          onHealthyPrefsChange={(prefs) => changeHealthyFocus(healthyFocus, prefs)}
           maxMiles={maxMiles}
           onMaxMilesChange={setMaxMiles}
           priceLevels={priceLevels}

@@ -97,4 +97,17 @@ describe('parseSearchQuery lunch', () => {
     expect(parseSearchQuery('pizza Portland OR')).toMatchObject({ location: 'portland or' })
     expect(parseSearchQuery('healthy food near me')).toMatchObject({ location: null, nearMe: true })
   })
+
+  it('reads "fast" as quick and "no smoothies" as an exclusion', () => {
+    expect(parseSearchQuery('Healthy fast lunch near me')).toMatchObject({
+      healthy: true, quick: true, lunch: true, lunchSpecial: false, nearMe: true, location: null, keyword: '', healthyAvoid: [],
+    })
+    const noSmoothies = parseSearchQuery('healthy restaurants  near me no smoothies')
+    expect(noSmoothies).toMatchObject({ healthy: true, nearMe: true, healthyAvoid: ['smoothie'], healthyFocus: [], quick: false, keyword: '' })
+    expect(parseSearchQuery('healthy food without smoothies or juice bars')).toMatchObject({ healthyAvoid: ['smoothie'], healthyFocus: [] })
+    expect(parseSearchQuery('healthy salmon, no steakhouses')).toMatchObject({ healthyAvoid: ['steak'], healthyFocus: ['seafood'] })
+    expect(parseSearchQuery('healthy smoothies near Frisco')).toMatchObject({ healthyAvoid: [], healthyFocus: ['smoothie'] })
+    expect(parseSearchQuery('healthy breakfast')).toMatchObject({ quick: false })
+    expect(describeParsedQuery(noSmoothies, (id) => id)).toEqual(['Healthy', 'near you', 'no smoothies'])
+  })
 })

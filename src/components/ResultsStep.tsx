@@ -16,6 +16,7 @@ import { formatDistanceMiles, isProbablyOpenNow } from '../lib/rank'
 import type { SeedOilInfo } from '../lib/seedOil'
 import { lunchVerdict } from '../lib/lunch'
 import { seedOilVerdict } from '../lib/seedOilStatus'
+import type { HealthyPrefs } from '../lib/healthySearch'
 import type { HealthyFocusId, RankedRestaurant } from '../lib/types'
 import { RatingsRow } from './RatingsRow'
 
@@ -46,6 +47,9 @@ type Props = {
   hasWebsiteOnly: boolean
   healthyFocus: HealthyFocusId[]
   onHealthyFocusChange: (focus: HealthyFocusId[]) => void
+  /** "no smoothies" / "fast lunch" from a typed search. */
+  healthyPrefs?: HealthyPrefs
+  onHealthyPrefsChange?: (prefs: HealthyPrefs) => void
   maxMiles: number | null
   onMaxMilesChange: (miles: number | null) => void
   priceLevels: PriceLevel[]
@@ -76,6 +80,14 @@ type Props = {
 }
 
 
+const AVOID_LABELS: Record<HealthyFocusId, string> = {
+  smoothie: 'smoothie shops',
+  steak: 'steakhouses',
+  seafood: 'seafood',
+  plant: 'salad spots',
+  clean: 'clean kitchens',
+}
+
 const KM_PER_MILE = 1.609
 const DISTANCE_CHOICES = [1, 3, 5, 10] as const
 const PRICE_CHOICES: PriceLevel[] = [1, 2, 3, 4]
@@ -99,6 +111,8 @@ export function ResultsStep({
   hasWebsiteOnly,
   healthyFocus,
   onHealthyFocusChange,
+  healthyPrefs = {},
+  onHealthyPrefsChange,
   maxMiles,
   onMaxMilesChange,
   priceLevels,
@@ -352,8 +366,8 @@ export function ResultsStep({
         <div className="filters chip-row wrap" role="group" aria-label="What kind of healthy">
           <button
             type="button"
-            className={`chip healthy ${healthyFocus.length === 0 ? 'on' : ''}`}
-            aria-pressed={healthyFocus.length === 0}
+            className={`chip healthy ${healthyFocus.length === 0 && !healthyPrefs.avoid?.length ? 'on' : ''}`}
+            aria-pressed={healthyFocus.length === 0 && !healthyPrefs.avoid?.length}
             onClick={() => onHealthyFocusChange([])}
           >
             All healthy
@@ -375,6 +389,28 @@ export function ResultsStep({
               </button>
             )
           })}
+          {(healthyPrefs.avoid ?? []).map((id) => (
+            <button
+              key={`avoid-${id}`}
+              type="button"
+              className="chip healthy on"
+              title="Remove this exclusion"
+              onClick={() => onHealthyPrefsChange?.({ ...healthyPrefs, avoid: healthyPrefs.avoid?.filter((a) => a !== id) })}
+            >
+              No {AVOID_LABELS[id]} ✕
+            </button>
+          ))}
+          {onHealthyPrefsChange ? (
+            <button
+              type="button"
+              className={`chip healthy ${healthyPrefs.quick ? 'on' : ''}`}
+              aria-pressed={Boolean(healthyPrefs.quick)}
+              title="Order-at-the-counter spots first: bowls, salads, smoothies, cafes"
+              onClick={() => onHealthyPrefsChange({ ...healthyPrefs, quick: !healthyPrefs.quick })}
+            >
+              Quick bite
+            </button>
+          ) : null}
         </div>
       ) : null}
 

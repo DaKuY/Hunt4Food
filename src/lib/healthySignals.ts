@@ -288,6 +288,37 @@ export function matchesHealthyFocus(
   }
 }
 
+/**
+ * For "no smoothies" / "no steakhouses": is this place mainly that kind of spot?
+ * Stricter than matchesHealthyFocus, so True Food Kitchen (which sells smoothies)
+ * stays when smoothie shops are excluded.
+ */
+export function isPrimarilyFocus(place: Restaurant, focus: HealthyFocusId): boolean {
+  const blob = categoryBlob(place)
+  const chain = matchKnownChain(place)
+  switch (focus) {
+    case 'smoothie':
+      return chain ? chain.lane === 'smoothie' : SMOOTHIE_JUICE.test(blob)
+    case 'steak':
+      return /\b(steakhouse|steak_house|chophouse)\b/.test(blob)
+    case 'seafood':
+      return /\b(seafood|fish|sushi|poke)\b/.test(blob)
+    case 'plant':
+      return place.vegan === 'only' || place.vegetarian === 'only' || /\b(vegan|vegetarian|salad|salads)\b/.test(blob)
+    case 'clean':
+      return false
+  }
+}
+
+/** Order-at-the-counter spots for "fast" / "quick" healthy: bowls, salads, smoothies, cafes. */
+const QUICK_SERVICE = /\b(fast_food|cafe|food_court|salad|salads|juice|juice_bar|smoothies?|acai|poke|bowls?|sandwich|deli|wraps?|fast casual|fast_casual)\b/
+
+export function isQuickService(place: Restaurant): boolean {
+  const chain = matchKnownChain(place)
+  if (chain) return chain.name !== 'True Food Kitchen'
+  return QUICK_SERVICE.test(categoryBlob(place))
+}
+
 function sourceFromHint(hint?: HealthySignalSource): HealthySignalSource {
   return hint ?? 'listing'
 }

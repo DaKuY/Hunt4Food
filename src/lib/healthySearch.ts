@@ -14,6 +14,8 @@ import {
   healthySignalScore,
   healthyCategoryReason,
   isHealthyMatch,
+  isPrimarilyFocus,
+  isQuickService,
   matchesHealthyFocus,
   matchKnownChain,
   mergeSignals,
@@ -267,8 +269,8 @@ function scoreHealthyPlace(
 /**
  * Only real healthy matches (see healthyQualityTier), narrowed to the chosen
  * focus when there is one. Best-first by quality tier, then score, while keeping the list varied:
- * one location per healthy chain and at most half the list from one lane
- * (clean cooking / smoothies / salmon-steak-chicken). Anything deferred by
+ * one location per healthy chain, at most half the list from one lane
+ * (clean cooking / smoothies / salmon-steak-chicken) and about a third from smoothies. Anything deferred by
  * those rules still fills remaining slots, in order.
  */
 export function pickHealthyLanes(
@@ -276,28 +278,46 @@ export function pickHealthyLanes(
   limit = 10,
   excludeIds?: Iterable<string>,
   focus: HealthyFocusId[] = [],
+  prefs: HealthyPrefs = {},
 ): RankedRestaurant[] {
   const exclude = excludeIds ? new Set(excludeIds) : new Set<string>()
+  const avoid = prefs.avoid ?? []
   const ordered = ranked
     .filter((place) => !exclude.has(place.id))
     .filter((place) => isHealthyMatch(place, place.signals ?? []))
     .filter((place) => !focus.length || focus.some((f) => matchesHealthyFocus(place, place.signals ?? [], f)))
+    .filter((place) => !avoid.some((f) => isPrimarilyFocus(place, f)))
     .sort((a, b) => {
+      // "Fast" / "quick": counter-service spots first, sit-down places after.
+      // A smoothie-only shop is a drink, not lunch: after counter-service food spots.
+      if (prefs.quick) {
+        const quickDiff = quickRank(a) - quickRank(b)
+        if (quickDiff !== 0) return quickDiff
+      }
       const tierDiff = healthyQualityTier(a, a.signals ?? []) - healthyQualityTier(b, b.signals ?? [])
       if (tierDiff !== 0) return tierDiff
       return b.score - a.score
     })
 
   const laneCap = Math.max(1, Math.ceil(limit / 2))
+  // Plain "healthy" is mostly food (True Food Kitchen–style, salmon, steak); smoothie shops
+  // get about a third of the list unless Smoothies was picked.
+  const smoothieCap = focus.includes('smoothie') ? laneCap : Math.max(1, Math.round(limit * 0.3))
+  const capFor = (lane: string) => (lane === 'smoothie' ? smoothieCap : laneCap)
   const picked: RankedRestaurant[] = []
   const deferred: RankedRestaurant[] = []
+  const repeats: RankedRestaurant[] = []
   const chainsUsed = new Set<string>()
   const laneCounts = new Map<string, number>()
   for (const place of ordered) {
     if (picked.length >= limit) break
     const chain = matchKnownChain(place)?.name
     const lane = place.lane ?? 'clean_cooking'
-    if ((chain && chainsUsed.has(chain)) || (laneCounts.get(lane) ?? 0) >= laneCap) {
+    if (chain && chainsUsed.has(chain)) {
+      repeats.push(place)
+      continue
+    }
+    if ((laneCounts.get(lane) ?? 0) >= capFor(lane)) {
       deferred.push(place)
       continue
     }
@@ -305,12 +325,23 @@ export function pickHealthyLanes(
     laneCounts.set(lane, (laneCounts.get(lane) ?? 0) + 1)
     picked.push(place)
   }
-  for (const place of deferred) {
+  // Leftover slots: other places past their lane's cap first, then more locations of a chain.
+  for (const place of [...deferred, ...repeats]) {
     if (picked.length >= limit) break
     picked.push(place)
   }
   return picked
 }
+
+/** 0: counter-service food, 1: smoothie/juice-only counter, 2: sit-down. */
+function quickRank(place: RankedRestaurant): number {
+  if (!isQuickService(place)) return 2
+  const drinksOnly = isPrimarilyFocus(place, 'smoothie') && !/\b(sandwich|wraps?|bowls?|salad|cafe)\b/.test(`${place.name} ${place.cuisines.join(' ')} ${place.cuisineRaw ?? ''}`.toLowerCase())
+  return drinksOnly ? 1 : 0
+}
+
+/** From a typed search: "no smoothies" (avoid) and "fast lunch" (quick). */
+export type HealthyPrefs = { avoid?: HealthyFocusId[]; quick?: boolean }
 
 async function fetchHealthyDiscover(
   city: CitySelection,
@@ -518,12 +549,15 @@ export async function runHealthyHunt(opts: {
   osmPlaces: Restaurant[]
   /** Narrow the shown list; the cached pool stays complete so focus can change without a new hunt. */
   focus?: HealthyFocusId[]
+  /** "no smoothies", "fast lunch": applied to the shown list like focus. */
+  prefs?: HealthyPrefs
   /** Extra provider searches, e.g. "healthy lunch special". */
   extraDiscoveryTerms?: string[]
   signal?: AbortSignal
   onProgress?: (update: HealthySearchProgress) => void
 }): Promise<{ displayed: RankedRestaurant[]; pool: RankedRestaurant[] }> {
   const focus = opts.focus ?? []
+  const prefs = opts.prefs ?? {}
   const key = healthySearchCacheKey(
     opts.city,
     opts.selectedCuisines,
@@ -533,7 +567,7 @@ export async function runHealthyHunt(opts: {
   )
   const cached = readCache<{ displayed: RankedRestaurant[]; pool: RankedRestaurant[] }>(key)
   if (cached?.pool?.length) {
-    const displayed = pickHealthyLanes(cached.pool, 10, undefined, focus)
+    const displayed = pickHealthyLanes(cached.pool, 10, undefined, focus, prefs)
     opts.onProgress?.({ status: 'Loaded saved healthy search for today.', places: displayed })
     return { displayed, pool: cached.pool }
   }
@@ -551,7 +585,7 @@ export async function runHealthyHunt(opts: {
 
   let pool = opts.osmPlaces
   let ranked = rankHealthyPool(pool, rankOpts)
-  let displayed = pickHealthyLanes(ranked, 10, undefined, focus)
+  let displayed = pickHealthyLanes(ranked, 10, undefined, focus, prefs)
   opts.onProgress?.({
     status: 'Looking first for clean-food evidence such as grass-fed, pasture-raised, organic, and clean oils…',
     places: displayed,
@@ -574,7 +608,7 @@ export async function runHealthyHunt(opts: {
         pool = mergeHealthyProviders(pool, providers, opts.city.label)
         pool = mergeDiscoverIntoPool(pool, discovered, opts.city.label)
         ranked = rankHealthyPool(pool, rankOpts, discovered, snippets)
-        displayed = pickHealthyLanes(ranked, 10, undefined, focus)
+        displayed = pickHealthyLanes(ranked, 10, undefined, focus, prefs)
         opts.onProgress?.({
           status:
             'Checking True Food Kitchen–style spots, smoothie cafés, and reviews for grass-fed, no seed oils, avocado oil, then salmon and steak…',
@@ -586,7 +620,7 @@ export async function runHealthyHunt(opts: {
       if (!opts.signal?.aborted && providers.length) {
         pool = mergeHealthyProviders(pool, providers, opts.city.label)
         ranked = rankHealthyPool(pool, rankOpts)
-        displayed = pickHealthyLanes(ranked, 10, undefined, focus)
+        displayed = pickHealthyLanes(ranked, 10, undefined, focus, prefs)
       }
       opts.onProgress?.({
         status: 'Review search is limited right now — showing the best non-fast-food healthy matches.',
@@ -601,7 +635,7 @@ export async function runHealthyHunt(opts: {
       if (!opts.signal?.aborted) {
         ranked = applyReviews(ranked, data.reviews)
         ranked = ranked.map((p) => scoreHealthyPlace(p, rankOpts))
-        displayed = pickHealthyLanes(ranked, 10, undefined, focus)
+        displayed = pickHealthyLanes(ranked, 10, undefined, focus, prefs)
       }
     } catch {
       // keep discover-only evidence
