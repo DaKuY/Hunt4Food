@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { runHealthyHunt } from './healthySearch'
+import { runHealthyHunt, type HealthyPrefs } from './healthySearch'
 import { emptyTaste } from './taste'
 import type { CitySelection, HealthyFocusId, Restaurant } from './types'
 
@@ -46,8 +46,8 @@ const city: CitySelection = { label: 'Austin', center: C, bounds: { south: 30.2,
 beforeAll(() => vi.stubGlobal('fetch', async () => new Response('{"places":[]}', { status: 200 })))
 afterAll(() => vi.unstubAllGlobals())
 
-const hunt = (osmPlaces: Restaurant[], label: string, focus: HealthyFocusId[] = []) =>
-  runHealthyHunt({ city: { ...city, label }, selectedCuisines: ['healthy'], dietary: [], taste: emptyTaste(), osmPlaces, focus })
+const hunt = (osmPlaces: Restaurant[], label: string, focus: HealthyFocusId[] = [], prefs: HealthyPrefs = {}) =>
+  runHealthyHunt({ city: { ...city, label }, selectedCuisines: ['healthy'], dietary: [], taste: emptyTaste(), osmPlaces, focus, prefs })
 const names = (rows: Array<{ name: string }>) => rows.map((r) => r.name)
 
 const NOT_HEALTHY = [
@@ -89,5 +89,32 @@ describe('healthy search on a realistic neighborhood', () => {
     expect(reasonFor('Local Chophouse')).toMatch(/Steakhouse/)
     expect(reasonFor('Poke Paradise')).toMatch(/seafood|poke/i)
     for (const row of displayed) expect(row.reasons[0]).not.toMatch(/fallback/i)
+  })
+
+  it('"healthy restaurants no smoothies" drops smoothie shops but keeps True Food Kitchen', async () => {
+    const top = names((await hunt(POOL, 'NoSmoothies', [], { avoid: ['smoothie'] })).displayed)
+    console.log('no smoothies:', top.join(', '))
+    for (const name of ['Tropical Smoothie Cafe', 'Pure Green', 'Smoothie King', 'Juice Land']) expect(top).not.toContain(name)
+    expect(top).toEqual(expect.arrayContaining(['True Food Kitchen', 'Local Chophouse', 'Poke Paradise']))
+    for (const name of NOT_HEALTHY) expect(top).not.toContain(name)
+  })
+
+  it('"healthy fast lunch" puts counter-service spots first', async () => {
+    const { displayed } = await hunt(POOL, 'Quick', [], { quick: true })
+    const top = names(displayed)
+    console.log('quick:', top.join(', '))
+    expect(top.slice(0, 5)).toEqual(expect.arrayContaining(['Tropical Smoothie Cafe', 'Sweetgreen', 'CAVA']))
+    expect(top.indexOf('Sweetgreen')).toBe(0)
+    if (top.includes('Local Chophouse')) expect(top.indexOf('Local Chophouse')).toBeGreaterThan(top.indexOf('CAVA'))
+    for (const name of NOT_HEALTHY) expect(top).not.toContain(name)
+  })
+
+  it('plain healthy mixes clean kitchens, smoothies and salmon/steak', async () => {
+    const { displayed } = await hunt(POOL, 'Default')
+    console.log('default:', displayed.map((r) => `${r.name} [${r.lane}]`).join(', '))
+    const lanes = new Set(displayed.map((r) => r.lane))
+    expect(lanes).toEqual(new Set(['clean_cooking', 'smoothie', 'protein']))
+    expect(displayed.filter((r) => r.lane === 'smoothie').length).toBeLessThanOrEqual(3)
+    expect(names(displayed).slice(0, 2)).toContain('True Food Kitchen')
   })
 })
