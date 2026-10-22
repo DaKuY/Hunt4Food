@@ -172,18 +172,32 @@ export function CuisineStep({
         <p className="muted small">Preferences move matching places up; they don&apos;t hide others.</p>
       </div>
 
-      <label className="field keyword-field">
-        <span>Anything else</span>
-        <input
-          value={keyword}
-          onChange={(e) => onKeywordChange(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && canProceed) onNext()
-          }}
-          placeholder='e.g. "wild caught fish", "grass fed steak", "organic salad"'
-          autoComplete="off"
-        />
-      </label>
+      <form
+        className="field keyword-field"
+        role="search"
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (canProceed) onNext()
+        }}
+      >
+        <label htmlFor="keyword-input">
+          <span>Anything else</span>
+        </label>
+        {/* Search right here: no scrolling down to "Find 10 places". */}
+        <div className="ask-row">
+          <input
+            id="keyword-input"
+            value={keyword}
+            onChange={(e) => onKeywordChange(e.target.value)}
+            placeholder='e.g. "wild caught fish", "grass fed steak", "organic salad"'
+            autoComplete="off"
+            enterKeyHint="search"
+          />
+          <button type="submit" className="btn primary" disabled={!canProceed}>
+            Search
+          </button>
+        </div>
+      </form>
       <div className="chip-row wrap">
         {KEYWORD_SUGGESTIONS.map((suggestion) => (
           <button

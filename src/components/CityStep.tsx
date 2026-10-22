@@ -51,8 +51,11 @@ function BoundsWatcher({ onBounds }: { onBounds: (b: MapBounds, center: { lat: n
 /** A food plus a place ("healthy food in Coppell TX"), not just a city name. */
 function searchInCityBox(query: string) {
   const parsed = parseSearchQuery(query)
-  if (!parsed.location || (!parsed.healthy && !parsed.cuisines.length && !parsed.keyword)) return null
-  return describeParsedQuery(parsed, (id) => cuisineById(id).label).join(' · ')
+  if (!parsed.location) return null
+  const anyFood = !parsed.healthy && !parsed.cuisines.length && !parsed.keyword
+  // A bare city ("Grapevine TX") is a city search; "food in Grapevine TX" is a restaurant search.
+  if (anyFood && !/\b(?:food|eat|restaurants?|places?|dinner|lunch|breakfast|brunch)\b/i.test(query)) return null
+  return [...(anyFood ? ['Restaurants'] : []), ...describeParsedQuery(parsed, (id) => cuisineById(id).label)].join(' · ')
 }
 
 export function CityStep({ onConfirm, onAsk, onBack, initial }: Props) {
@@ -134,13 +137,46 @@ export function CityStep({ onConfirm, onAsk, onBack, initial }: Props) {
     onConfirm(city)
   }
 
-  function selectHit(hit: GeocodeHit) {
-    applyLocation({
+  function hitToSelection(hit: GeocodeHit): CitySelection {
+    return {
       label: hit.label,
       center: { lat: hit.lat, lon: hit.lon },
       bounds: { south: hit.south, west: hit.west, north: hit.north, east: hit.east },
       source: 'search',
-    })
+    }
+  }
+
+  /** Picking a typed-city suggestion goes straight on; the map stays for fine-tuning an area. */
+  function selectHit(hit: GeocodeHit) {
+    confirmCitySelection(hitToSelection(hit))
+  }
+
+  /** Search button / Enter next to the box: no scrolling down to "Use this location". */
+  async function submitBox() {
+    const text = query.trim()
+    if (onAsk && fullSearch) {
+      onAsk(text)
+      return
+    }
+    if (!text || (draft && text === draft.label)) {
+      void confirmMapArea()
+      return
+    }
+    if (hits[0]) {
+      confirmCitySelection(hitToSelection(hits[0]))
+      return
+    }
+    setSearching(true)
+    setError(null)
+    try {
+      const found = await searchCities(text)
+      if (found[0]) confirmCitySelection(hitToSelection(found[0]))
+      else setError(`Couldn’t find “${text}”. Try “City, ST”.`)
+    } catch {
+      setError('City search failed. Try the map instead.')
+    } finally {
+      setSearching(false)
+    }
   }
 
   function selectRecent(c: RecentCity) {
@@ -208,23 +244,32 @@ export function CityStep({ onConfirm, onAsk, onBack, initial }: Props) {
         </p>
       </header>
 
-      <label className="field">
-        <span>City or neighborhood</span>
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && onAsk && fullSearch) onAsk(query.trim())
-          }}
-          placeholder="e.g. Austin, Tokyo, Brooklyn"
-          autoComplete="off"
-        />
-      </label>
-      {onAsk && fullSearch ? (
-        <button type="button" className="btn primary" onClick={() => onAsk(query.trim())}>
-          Search {fullSearch}
-        </button>
-      ) : null}
+      <form
+        className="field"
+        role="search"
+        onSubmit={(e) => {
+          e.preventDefault()
+          void submitBox()
+        }}
+      >
+        <label htmlFor="city-input">
+          <span>City or neighborhood</span>
+        </label>
+        <div className="ask-row">
+          <input
+            id="city-input"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="e.g. Austin, Tokyo, Brooklyn"
+            autoComplete="off"
+            enterKeyHint="search"
+          />
+          <button type="submit" className="btn primary" disabled={searching}>
+            Search
+          </button>
+        </div>
+        {onAsk && fullSearch ? <p className="muted small">Will search: {fullSearch}</p> : null}
+      </form>
 
       <button
         type="button"
