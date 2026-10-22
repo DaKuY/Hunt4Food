@@ -12,6 +12,10 @@ export type ParsedQuery = {
   dietary: DietaryId[]
   healthy: boolean
   healthyFocus: HealthyFocusId[]
+  /** "no smoothies": leave out places that are mainly that kind of spot. */
+  healthyAvoid: HealthyFocusId[]
+  /** "fast", "quick", "grab and go": counter-service places first. */
+  quick: boolean
   /** Place to search around ("Coppell TX"); null means use the current or nearby area. */
   location: string | null
   nearMe: boolean
@@ -59,13 +63,22 @@ const FOCUS_RULES: Array<{ id: HealthyFocusId; pattern: RegExp }> = [
   { id: 'clean', pattern: /\borganic\b|clean (?:eating|food|kitchen)|farm[-\s]?to[-\s]?table/ },
 ]
 
+/** "no smoothies", "without steakhouses", "not seafood": kinds of healthy to leave out. */
+const AVOID_WORDS: Array<{ id: HealthyFocusId; words: string }> = [
+  { id: 'smoothie', words: '(?:smoothies?|smoothie bowls?|juice(?:s| bars?)?|acai(?: bowls?)?|açaí)' },
+  { id: 'steak', words: '(?:steaks?|steakhouses?|steak houses?)' },
+  { id: 'seafood', words: '(?:seafood|fish|salmon|sushi)' },
+  { id: 'plant', words: '(?:salads?|vegan|vegetarian)' },
+]
+const AVOID_LEAD = "(?:no|not|without|w/o|skip|except|excluding|exclude|minus|but not|other than|nothing like|don'?t want|dont want|no more)"
+
 /** Words that carry no search meaning on their own. */
 const FILLER = new Set(
   ('find me a an the some good best great place places spot spots restaurant restaurants food eat eating ' +
     'to get want i im i\'m looking for show give that which with has have doesn\'t doesnt does not use uses ' +
     'using cooked cook in near around by close nearby me please any free without no dont don\'t avoid oil oils ' +
     'seed open now cheap budget fancy upscale under within miles mile mi of is are serves serving options option ' +
-    'lunch lunches special specials deal deals combo combos menu')
+    'lunch lunches special specials deal deals combo combos menu fast quick express grab go casual counter hurry')
     .split(' '),
 )
 
@@ -126,9 +139,22 @@ export function parseSearchQuery(raw: string): ParsedQuery {
     }
   }
 
+  // "no smoothies" first, and cut it out so "smoothies" isn't also read as a focus.
+  const healthyAvoid: HealthyFocusId[] = []
+  for (const rule of AVOID_WORDS) {
+    const re = new RegExp(`\\b${AVOID_LEAD}\\s+(?:(?:any|more|the|places?|spots?|shops?|like)\\s+){0,2}${rule.words}(?:\\s*(?:,|or|and|/)\\s*${rule.words})*\\b`, 'g')
+    if (re.test(text)) {
+      healthyAvoid.push(rule.id)
+      text = text.replace(re, ' ')
+    }
+  }
+  const quick = /\b(?:fast|quick|express|grab[- ]and[- ]go|on the go|in a hurry|fast[- ]casual|counter service)\b/.test(text)
+
   const dietary = DIETARY_RULES.filter((rule) => rule.pattern.test(text)).map((rule) => rule.id)
   const healthy = /\bhealthy\b|\bhealthier\b|clean eating|clean food/.test(text)
-  const healthyFocus = healthy ? FOCUS_RULES.filter((rule) => rule.pattern.test(text)).map((rule) => rule.id) : []
+  const healthyFocus = healthy
+    ? FOCUS_RULES.filter((rule) => rule.pattern.test(text) && !healthyAvoid.includes(rule.id)).map((rule) => rule.id)
+    : []
 
   // Cuisine labels first ("Mexican"), then their keywords ("taqueria" → Mexican/Tacos).
   const cuisines: CuisineId[] = []
@@ -162,7 +188,8 @@ export function parseSearchQuery(raw: string): ParsedQuery {
   }
 
   const openNow = /\bopen now\b|\bopen right now\b|\bstill open\b|\bopen late\b/.test(text)
-  const lunchSpecial = /\blunch(?:time)?\s+(?:specials?|deals?|combos?|menu|prix[-\s]?fixe|plates?)\b|\b(?:cheap|quick|express|business)\s+lunch\b/.test(text)
+  // "quick lunch" is about speed (see quick), not a deal.
+  const lunchSpecial = /\blunch(?:time)?\s+(?:specials?|deals?|combos?|menu|prix[-\s]?fixe|plates?)\b|\b(?:cheap|business)\s+lunch\b/.test(text)
   const lunch = lunchSpecial || /\blunch\b/.test(text)
 
   let keyword = ''
@@ -180,6 +207,8 @@ export function parseSearchQuery(raw: string): ParsedQuery {
     dietary,
     healthy,
     healthyFocus,
+    healthyAvoid: healthy ? healthyAvoid : [],
+    quick,
     location,
     nearMe: nearMe && !location,
     maxMiles,
@@ -194,7 +223,8 @@ export function parseSearchQuery(raw: string): ParsedQuery {
 /** Short human summary of what was understood, for the confirmation line. */
 export function describeParsedQuery(parsed: ParsedQuery, cuisineLabel: (id: CuisineId) => string): string[] {
   const parts: string[] = []
-  if (parsed.healthy) parts.push('Healthy')
+  if (parsed.healthy) parts.push(parsed.quick ? 'Healthy, quick' : 'Healthy')
+  else if (parsed.quick) parts.push('Quick')
   parts.push(...parsed.cuisines.map(cuisineLabel))
   if (parsed.keyword) parts.push(`“${parsed.keyword}”`)
   if (parsed.location) parts.push(`near ${parsed.location.replace(/\b([a-z])/g, (c) => c.toUpperCase()).replace(/\b([A-Z][a-z])$/, (s) => s.toUpperCase())}`)
@@ -207,6 +237,8 @@ export function describeParsedQuery(parsed: ParsedQuery, cuisineLabel: (id: Cuis
   }
   if (parsed.maxMiles) parts.push(`within ${parsed.maxMiles} mi`)
   if (parsed.priceLevels.length) parts.push(parsed.priceLevels.map((l) => '$'.repeat(l)).join('/'))
+  const AVOID_LABELS: Record<HealthyFocusId, string> = { smoothie: 'smoothies', steak: 'steakhouses', seafood: 'seafood', plant: 'salad spots', clean: '' }
+  for (const id of parsed.healthyAvoid ?? []) parts.push(`no ${AVOID_LABELS[id]}`)
   if (parsed.lunchSpecial) parts.push('lunch special')
   else if (parsed.lunch) parts.push('open for lunch')
   if (parsed.openNow) parts.push('open now')
