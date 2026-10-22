@@ -51,8 +51,11 @@ function BoundsWatcher({ onBounds }: { onBounds: (b: MapBounds, center: { lat: n
 /** A food plus a place ("healthy food in Coppell TX"), not just a city name. */
 function searchInCityBox(query: string) {
   const parsed = parseSearchQuery(query)
-  if (!parsed.location || (!parsed.healthy && !parsed.cuisines.length && !parsed.keyword)) return null
-  return describeParsedQuery(parsed, (id) => cuisineById(id).label).join(' · ')
+  if (!parsed.location) return null
+  const anyFood = !parsed.healthy && !parsed.cuisines.length && !parsed.keyword
+  // A bare city ("Grapevine TX") is a city search; "food in Grapevine TX" is a restaurant search.
+  if (anyFood && !/\b(?:food|eat|restaurants?|places?|dinner|lunch|breakfast|brunch)\b/i.test(query)) return null
+  return [...(anyFood ? ['Restaurants'] : []), ...describeParsedQuery(parsed, (id) => cuisineById(id).label)].join(' · ')
 }
 
 export function CityStep({ onConfirm, onAsk, onBack, initial }: Props) {

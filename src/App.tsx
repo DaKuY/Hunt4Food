@@ -141,6 +141,24 @@ function hasSearchCriteria(cuisines: CuisineId[], keyword: string): boolean {
 function SearchFlow() {
   const { setSearchNav } = useSearchNav()
   const [params, setParams] = useSearchParams()
+  // Several URL updates in one event (new city, then filters) must build on each other:
+  // React Router's functional setParams only sees the last rendered params, so a second
+  // update in the same tick would put the old city back.
+  const paramsRef = useRef(params)
+  paramsRef.current = params
+  const pendingParamsRef = useRef<URLSearchParams | null>(null)
+  useEffect(() => {
+    pendingParamsRef.current = null
+  }, [params])
+  const updateParams = useCallback(
+    (mutate: (next: URLSearchParams) => void) => {
+      const next = new URLSearchParams(pendingParamsRef.current ?? paramsRef.current)
+      mutate(next)
+      pendingParamsRef.current = next
+      setParams(next, { replace: true })
+    },
+    [setParams],
+  )
   const { taste, setTaste } = useTaste()
   const restored = cityFromParams(params)
   const initialRecentRef = useRef(restored ? null : loadRecentCities()[0])
@@ -523,7 +541,8 @@ function SearchFlow() {
   )
 
   const searchAgain = useCallback(async () => {
-    if (!city || !hasSearchCriteria(cuisines, keyword)) return
+    // No food picked is fine here: that's an "any restaurant" search from the ask bar.
+    if (!city) return
     searchAbortRef.current?.abort()
     const ctrl = new AbortController()
     searchAbortRef.current = ctrl
@@ -606,8 +625,7 @@ function SearchFlow() {
     // A search started right away (typed search) must not await the previous city's prefetch.
     prefetchPromiseRef.current = null
     setRawPlaces([])
-    setParams((prev) => {
-      const next = new URLSearchParams(prev)
+    updateParams((next) => {
       next.set('city', selection.label)
       next.set('lat', String(selection.center.lat))
       next.set('lon', String(selection.center.lon))
@@ -615,15 +633,13 @@ function SearchFlow() {
       next.set('west', String(selection.bounds.west))
       next.set('north', String(selection.bounds.north))
       next.set('east', String(selection.bounds.east))
-      return next
-    }, { replace: true })
+    })
   }
 
   useEffect(() => {
     if (!initialRecent || restored) return
-    setParams((prev) => {
-      if (prev.get('city')) return prev
-      const next = new URLSearchParams(prev)
+    updateParams((next) => {
+      if (next.get('city')) return
       next.set('city', initialRecent.label)
       next.set('lat', String(initialRecent.lat))
       next.set('lon', String(initialRecent.lon))
@@ -631,9 +647,8 @@ function SearchFlow() {
       next.set('west', String(initialRecent.west))
       next.set('north', String(initialRecent.north))
       next.set('east', String(initialRecent.east))
-      return next
-    }, { replace: true })
-  }, [initialRecent, restored, setParams])
+    })
+  }, [initialRecent, restored, updateParams])
 
   useEffect(() => {
     if (restored || initialRecent || !resolvingLocation) return
@@ -677,13 +692,11 @@ function SearchFlow() {
     setHealthyFocus(next)
     setHealthyPrefs(prefs)
     healthyPrefsRef.current = prefs
-    setParams((prev) => {
-      const params = new URLSearchParams(prev)
+    updateParams((params) => {
       if (next.length) params.set('focus', next.join(','))
       else params.delete('focus')
       writePrefsParams(params, prefs)
-      return params
-    }, { replace: true })
+    })
     if (step === 'results' && healthyPoolRef.current.length) {
       const picked = pickHealthyLanes(healthyPoolRef.current, 10, undefined, next, prefs)
       setDisplayPlaces(picked)
@@ -707,8 +720,7 @@ function SearchFlow() {
     lunch: LunchFilter = lunchFilterRef.current,
     prefs: HealthyPrefs = healthyPrefsRef.current,
   ) {
-    setParams((prev) => {
-      const next = new URLSearchParams(prev)
+    updateParams((next) => {
       writePrefsParams(next, food.includes('healthy') ? prefs : {})
       if (lunch) next.set('lunch', lunch)
       else next.delete('lunch')
@@ -720,19 +732,21 @@ function SearchFlow() {
       const trimmed = kw.trim()
       if (trimmed) next.set('keyword', trimmed)
       else next.delete('keyword')
-      return next
-    }, { replace: true })
+    })
   }
 
   /** Plain-language search: parse, find the place, set every filter, then search. */
-  async function askSearch(text: string, picked: CuisineId[] = []) {
+  async function askSearch(text: string, picked: CuisineId[] = cuisines) {
     const parsed = parseSearchQuery(text)
     // "in Dallas" typed under foods already picked with the chips keeps those foods.
     if (!parsed.cuisines.length && !parsed.healthy && !parsed.keyword && picked.length) {
       parsed.healthy = picked.includes('healthy')
       parsed.cuisines = picked.filter((id) => id !== 'healthy')
     }
-    if (!parsed.cuisines.length && !parsed.healthy && !parsed.keyword) {
+    // "food in Grapevine TX": a place with no food named means the best restaurants there.
+    const anyFood = !parsed.cuisines.length && !parsed.healthy && !parsed.keyword
+    if (anyFood && !parsed.location && !parsed.nearMe) {
+      window.scrollTo({ top: 0, behavior: 'smooth' })
       setAskMessage({
         kind: 'problem',
         text: parsed.lunch
@@ -782,7 +796,11 @@ function SearchFlow() {
       writeSearchParams(food, diet, kw, parsed.healthyFocus, lunch, prefs)
       setAskMessage({
         kind: 'understood',
-        text: [...describeParsedQuery({ ...parsed, location: null, nearMe: false }, (id) => cuisineById(id).label), `near ${selection.label}`].join(' · '),
+        text: [
+          ...(anyFood ? ['Restaurants'] : []),
+          ...describeParsedQuery({ ...parsed, location: null, nearMe: false }, (id) => cuisineById(id).label),
+          `near ${selection.label}`,
+        ].join(' · '),
       })
       setScrollToResultsKey((k) => k + 1)
       await runSearch(selection, food, diet, kw)
@@ -793,7 +811,7 @@ function SearchFlow() {
 
   function startFind() {
     // "healthy food in Coppell TX" typed in the keyword box: move there and search, like the ask bar.
-    if (parseSearchQuery(keyword).location) {
+    if (keyword.trim() && parseSearchQuery(keyword).location) {
       void askSearch(keyword, cuisines)
       return
     }
@@ -824,10 +842,14 @@ function SearchFlow() {
     poolRef.current = []
     healthyPoolRef.current = []
     prefetchPromiseRef.current = null
-    autoRanRef.current = false
+    // The saved-link auto-search is for page load only. Re-arming it here re-ran the old
+    // search (its params are still in the URL for one render) and left a blank results page.
+    autoRanRef.current = true
     setCityPickedByUser(false)
-    setParams(new URLSearchParams(), { replace: true })
-  }, [setParams])
+    updateParams((next) => {
+      for (const key of Array.from(next.keys())) next.delete(key)
+    })
+  }, [updateParams])
 
   useEffect(() => {
     setSearchNav({
