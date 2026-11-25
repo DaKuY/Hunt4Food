@@ -48,6 +48,16 @@ export async function handleLodgeGate(
     deps,
   )
   if (decision.type === 'allow') return null
+  if (decision.type === 'unavailable') {
+    return new Response(JSON.stringify({ error: 'authentication_service_unavailable' }), {
+      status: 503,
+      headers: {
+        'content-type': 'application/json; charset=utf-8',
+        'cache-control': 'private, no-store',
+        'retry-after': '5',
+      },
+    })
+  }
   return loginResponse(request, env)
 }
 

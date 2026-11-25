@@ -16,6 +16,7 @@ export type AuthorizeDeps = {
 export type GateDecision =
   | { type: 'allow'; session: SessionPayload }
   | { type: 'login' }
+  | { type: 'unavailable' }
 
 export { hasAppGrant }
 
@@ -73,21 +74,19 @@ export async function authorizeRequest(
   const token = readCookie(cookieHeader, SESSION_COOKIE)
   if (!token) return { type: 'login' }
 
-  const jwtSession = await verifySessionToken(token, authSecret)
   const lodge = await (deps.fetchLodge ?? ((t) => fetchLodgeSession(lodgeOrigin, t)))(token)
 
-  let session: SessionPayload | null = null
-  if (lodge !== 'unauthorized' && lodge !== 'unavailable') {
-    // Prefer the live lodge user over a stale JWT.
-    session = lodge
-  } else if (lodge === 'unavailable') {
-    session = jwtSession
-  } else {
-    return { type: 'login' }
+  if (lodge === 'unauthorized') return { type: 'login' }
+  if (lodge !== 'unavailable') {
+    // Base Camp is authoritative for live sessions and current grants.
+    return { type: 'allow', session: lodge }
   }
 
-  if (!session) return { type: 'login' }
-  return { type: 'allow', session }
+  // Optional compatibility fallback for older deployments. New product
+  // projects do not need AUTH_SECRET; when it is absent, fail closed cleanly.
+  if (!authSecret) return { type: 'unavailable' }
+  const jwtSession = await verifySessionToken(token, authSecret)
+  return jwtSession ? { type: 'allow', session: jwtSession } : { type: 'unavailable' }
 }
 
 export function requestWantsJson(request: Request): boolean {
