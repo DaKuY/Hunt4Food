@@ -31,7 +31,7 @@ describe('central Base Camp auth without a project secret', () => {
       APP_SLUG: 'Hunt4Food',
     })
     const request = new Request('https://hunt4food.andrewcamero.com/', {
-      headers: { cookie: `${SESSION_COOKIE}=opaque-session-token", accept: 'text/html' },
+      headers: { cookie: `${SESSION_COOKIE}=opaque-session-token`, accept: 'text/html' },
     })
     const response = await handleLodgeGate(request, env, {
       fetchLodge: async () => 'unavailable',
