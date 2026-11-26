@@ -1,5 +1,4 @@
 export type LodgeEnv = {
-  AUTH_SECRET: string
   COOKIE_DOMAIN: string
   LODGE_ORIGIN: string
   APP_SLUG: string
@@ -10,7 +9,6 @@ const DEFAULT_APP_SLUG = 'Hunt4Food'
 
 export function lodgeEnvFrom(source: Record<string, string | undefined>): LodgeEnv {
   return {
-    AUTH_SECRET: source.AUTH_SECRET?.trim() ?? '',
     COOKIE_DOMAIN: source.COOKIE_DOMAIN?.trim() ?? '',
     LODGE_ORIGIN: stripTrailingSlash(source.LODGE_ORIGIN?.trim() || DEFAULT_LODGE_ORIGIN),
     APP_SLUG: source.APP_SLUG?.trim() || DEFAULT_APP_SLUG,

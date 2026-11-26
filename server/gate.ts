@@ -41,12 +41,7 @@ export async function handleLodgeGate(
 ): Promise<Response | null> {
   const pathname = new URL(request.url).pathname
   if (isUngatedPath(pathname)) return null
-  const decision = await authorizeRequest(
-    request.headers.get('cookie'),
-    env.AUTH_SECRET,
-    env.LODGE_ORIGIN,
-    deps,
-  )
+  const decision = await authorizeRequest(request.headers.get('cookie'), env.LODGE_ORIGIN, deps)
   if (decision.type === 'allow') return null
   if (decision.type === 'unavailable') {
     return new Response(JSON.stringify({ error: 'authentication_service_unavailable' }), {

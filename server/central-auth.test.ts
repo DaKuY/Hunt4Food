@@ -18,7 +18,6 @@ describe('central Base Camp auth without a project secret', () => {
   it('allows a valid live lodge session when AUTH_SECRET is absent', async () => {
     const decision = await authorizeRequest(
       `${SESSION_COOKIE}=opaque-session-token`,
-      '',
       'https://andrewcamero.com',
       { fetchLodge: async () => session },
     )

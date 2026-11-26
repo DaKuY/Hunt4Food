@@ -1,9 +1,9 @@
-import { SignJWT } from 'jose'
 import { describe, expect, it } from 'vitest'
 import { lodgeEnvFrom, loginUrl } from './env.js'
 import { handleLodgeGate, isUngatedPath } from './gate.js'
 import {
   authorizeRequest,
+  createLodgeSessionCache,
   fetchLodgeSession,
   hasAppGrant,
   sessionFromUnknown,
@@ -11,14 +11,14 @@ import {
 } from './session.js'
 import { parseSessionPayload, SESSION_COOKIE, type SessionPayload } from './token.js'
 
-const SECRET = 'test-auth-secret-that-is-long-enough'
 const SLUG = 'Hunt4Food'
 const LODGE = 'https://andrewcamero.com'
 const ORIGIN = 'https://hunt4food.andrewcamero.com'
 const ORIGIN_CANONICAL = new URL(ORIGIN).origin
+// The cookie is opaque here: only Base Camp can read or verify it.
+const TOKEN = 'opaque-base-camp-session'
 
 const env = lodgeEnvFrom({
-  AUTH_SECRET: SECRET,
   COOKIE_DOMAIN: '.andrewcamero.com',
   LODGE_ORIGIN: LODGE,
   APP_SLUG: SLUG,
@@ -38,48 +38,7 @@ function claims(overrides: Partial<SessionPayload> = {}): SessionPayload {
   }
 }
 
-async function sign(payload: SessionPayload, secret = SECRET): Promise<string> {
-  return new SignJWT({
-    sub: payload.id,
-    id: payload.id,
-    email: payload.email,
-    name: payload.name,
-    admin: payload.admin,
-    role: payload.role,
-    apps: payload.apps,
-    tv: payload.tokenVersion,
-    tokenVersion: payload.tokenVersion,
-  })
-    .setProtectedHeader({ alg: 'HS256' })
-    .setSubject(payload.id)
-    .setIssuedAt()
-    .setExpirationTime('2h')
-    .sign(new TextEncoder().encode(secret))
-}
-
-async function signCanonical(input: {
-  sub: string
-  email: string
-  name: string
-  admin: boolean
-  apps: string[]
-  tv: number
-}): Promise<string> {
-  return new SignJWT({
-    email: input.email,
-    name: input.name,
-    admin: input.admin,
-    apps: input.apps,
-    tv: input.tv,
-  })
-    .setProtectedHeader({ alg: 'HS256' })
-    .setSubject(input.sub)
-    .setIssuedAt()
-    .setExpirationTime('2h')
-    .sign(new TextEncoder().encode(SECRET))
-}
-
-function cookieHeader(token: string): string {
+function cookieHeader(token = TOKEN): string {
   return `${SESSION_COOKIE}=${token}`
 }
 
@@ -94,6 +53,8 @@ function apiRequest(cookie?: string): Request {
   if (cookie) headers.set('cookie', cookie)
   return new Request(`${ORIGIN}/api/session`, { headers })
 }
+
+const lodgeSays = (answer: LodgeLookup) => ({ fetchLodge: async () => answer })
 
 describe('lodge auth gate', () => {
   it('redirects HTML and 401s APIs when there is no cookie', async () => {
@@ -110,144 +71,74 @@ describe('lodge auth gate', () => {
     expect(api!.status).toBe(401)
   })
 
-  it('allows a logged-in member without a Hunt4Food grant', async () => {
+  it('allows any signed-in member, even without a Hunt4Food grant (deliberate exception)', async () => {
     const session = claims({ apps: [] })
-    const token = await sign(session)
-    const decision = await authorizeRequest(cookieHeader(token), SECRET, LODGE, {
-      fetchLodge: async () => 'unavailable',
-    })
-    expect(decision).toEqual({ type: 'allow', session })
-
-    const html = await handleLodgeGate(htmlRequest(cookieHeader(token)), env, {
-      fetchLodge: async () => 'unavailable',
-    })
-    expect(html).toBeNull()
-
-    const api = await handleLodgeGate(apiRequest(cookieHeader(token)), env, {
-      fetchLodge: async () => 'unavailable',
-    })
-    expect(api).toBeNull()
+    expect(await authorizeRequest(cookieHeader(), LODGE, lodgeSays(session))).toEqual({ type: 'allow', session })
+    expect(await handleLodgeGate(htmlRequest(cookieHeader()), env, lodgeSays(session))).toBeNull()
+    expect(await handleLodgeGate(apiRequest(cookieHeader()), env, lodgeSays(session))).toBeNull()
   })
 
-  it('allows a member with Hunt4Food', async () => {
-    const session = claims({ apps: [SLUG] })
-    const token = await sign(session)
-    const decision = await authorizeRequest(cookieHeader(token), SECRET, LODGE, {
-      fetchLodge: async () => 'unavailable',
-    })
-    expect(decision).toEqual({ type: 'allow', session })
-
-    const html = await handleLodgeGate(htmlRequest(cookieHeader(token)), env, {
-      fetchLodge: async () => 'unavailable',
-    })
-    expect(html).toBeNull()
-  })
-
-  it('allows a member whose grant is hunt4food (case-insensitive)', async () => {
-    const token = await sign(claims({ apps: ['hunt4food'] }))
-    const decision = await authorizeRequest(cookieHeader(token), SECRET, LODGE, {
-      fetchLodge: async () => 'unavailable',
-    })
-    expect(decision.type).toBe('allow')
-    expect(hasAppGrant({ admin: false, role: 'member', apps: ['hunt4food'] }, SLUG)).toBe(true)
-  })
-
-  it('allows an admin without a grant row', async () => {
-    const session = claims({
-      id: 'admin-1',
-      email: 'drewe927@gmail.com',
-      name: 'Andrew Camero',
-      role: 'admin',
-      admin: true,
-      apps: [],
-    })
-    const token = await sign(session)
-    const decision = await authorizeRequest(cookieHeader(token), SECRET, LODGE, {
-      fetchLodge: async () => 'unavailable',
-    })
-    expect(decision.type).toBe('allow')
-    expect(hasAppGrant(session, SLUG)).toBe(true)
-
-    const html = await handleLodgeGate(htmlRequest(cookieHeader(token)), env, {
-      fetchLodge: async () => 'unavailable',
-    })
-    expect(html).toBeNull()
-  })
-
-  it('allows admin:true even when apps[] is empty and role is omitted on the lodge user', async () => {
-    const token = await sign(claims({ apps: [] }))
-    const live: LodgeLookup = {
-      id: 'admin-1',
-      email: 'drewe927@gmail.com',
-      name: 'Andrew Camero',
-      admin: true,
-      role: 'admin',
-      apps: [],
-      tokenVersion: 3,
-    }
-    const decision = await authorizeRequest(cookieHeader(token), SECRET, LODGE, {
-      fetchLodge: async () => live,
-    })
-    expect(decision.type).toBe('allow')
-  })
-
-  it('verifies canonical JWT claims (sub, admin, apps, tv)', async () => {
-    const token = await signCanonical({
-      sub: 'user-1',
-      email: 'member@example.com',
-      name: 'Member',
-      admin: false,
-      apps: [SLUG],
-      tv: 1,
-    })
-    const decision = await authorizeRequest(cookieHeader(token), SECRET, LODGE, {
-      fetchLodge: async () => 'unavailable',
-    })
-    expect(decision.type).toBe('allow')
-    if (decision.type === 'allow') {
-      expect(decision.session.id).toBe('user-1')
-      expect(decision.session.tokenVersion).toBe(1)
-      expect(decision.session.admin).toBe(false)
+  it('allows a member with Hunt4Food in any casing, and an admin with no grant row', async () => {
+    for (const session of [
+      claims({ apps: [SLUG] }),
+      claims({ apps: ['hunt4food'] }),
+      claims({ id: 'admin-1', name: 'Andrew Camero', admin: true, apps: [] }),
+    ]) {
+      expect((await authorizeRequest(cookieHeader(), LODGE, lodgeSays(session))).type).toBe('allow')
+      expect(await handleLodgeGate(htmlRequest(cookieHeader()), env, lodgeSays(session))).toBeNull()
     }
   })
 
-  it('prefers the live lodge user over a stale JWT', async () => {
-    const stale = claims({ apps: [SLUG], tokenVersion: 1 })
-    const token = await sign(stale)
-    const live: LodgeLookup = claims({ apps: [], tokenVersion: 9 })
-    const decision = await authorizeRequest(cookieHeader(token), SECRET, LODGE, {
-      fetchLodge: async () => live,
-    })
-    expect(decision.type).toBe('allow')
-    if (decision.type === 'allow') {
-      expect(decision.session.tokenVersion).toBe(9)
-    }
+  it('uses the live lodge user, including the current token version', async () => {
+    const live = claims({ apps: [], tokenVersion: 9 })
+    const decision = await authorizeRequest(cookieHeader(), LODGE, lodgeSays(live))
+    expect(decision).toEqual({ type: 'allow', session: live })
   })
 
-  it('allows a live lodge session when the JWT apps list is empty', async () => {
-    const token = await sign(claims({ apps: [] }))
-    const live = claims({ apps: [SLUG] })
-    const decision = await authorizeRequest(cookieHeader(token), SECRET, LODGE, {
-      fetchLodge: async () => live,
-    })
-    expect(decision.type).toBe('allow')
-  })
-
-  it('treats a lodge 401 as logged out even if the JWT still verifies', async () => {
-    const token = await sign(claims({ apps: [SLUG], role: 'admin' }))
-    const decision = await authorizeRequest(cookieHeader(token), SECRET, LODGE, {
-      fetchLodge: async () => 'unauthorized',
-    })
-    expect(decision.type).toBe('login')
-  })
-
-  it('treats lodge { user: null } as logged out rather than falling back to JWT', async () => {
+  it('sends a revoked or expired session (lodge 401 / user: null) to login', async () => {
     expect(sessionFromUnknown({ user: null })).toBeNull()
-    const token = await sign(claims({ apps: [SLUG] }))
-    const decision = await authorizeRequest(cookieHeader(token), SECRET, LODGE, {
-      fetchLodge: async () => 'unauthorized',
+    expect((await authorizeRequest(cookieHeader(), LODGE, lodgeSays('unauthorized'))).type).toBe('login')
+    const html = await handleLodgeGate(htmlRequest(cookieHeader()), env, lodgeSays('unauthorized'))
+    expect(html!.status).toBe(302)
+    expect(html!.headers.get('location')).toBe(loginUrl(LODGE, ORIGIN_CANONICAL))
+    const api = await handleLodgeGate(apiRequest(cookieHeader()), env, lodgeSays('unauthorized'))
+    expect(api!.status).toBe(401)
+  })
+
+  it('fails closed with a retryable 503 (never a login redirect) when Base Camp is down', async () => {
+    expect((await authorizeRequest(cookieHeader(), LODGE, lodgeSays('unavailable'))).type).toBe('unavailable')
+    for (const request of [htmlRequest(cookieHeader()), apiRequest(cookieHeader())]) {
+      const response = await handleLodgeGate(request, env, lodgeSays('unavailable'))
+      expect(response!.status).toBe(503)
+      expect(response!.headers.get('retry-after')).toBe('5')
+      expect(response!.headers.get('location')).toBeNull()
+    }
+  })
+
+  it('forwards only the session cookie to Base Camp with a bounded timeout', async () => {
+    let seen: RequestInit | undefined
+    let url = ''
+    await fetchLodgeSession(LODGE, TOKEN, async (input, init) => {
+      url = String(input)
+      seen = init
+      return new Response(JSON.stringify({ user: claims() }), { status: 200 })
     })
-    expect(decision.type).toBe('login')
+    expect(url).toBe(`${LODGE}/api/session`)
+    expect(new Headers(seen?.headers).get('cookie')).toBe(cookieHeader())
+    expect(seen?.redirect).toBe('manual')
+    expect(seen?.signal).toBeInstanceOf(AbortSignal)
+  })
+
+  it('treats a Base Camp 5xx, network error or malformed body as an outage', async () => {
+    expect(await fetchLodgeSession(LODGE, TOKEN, async () => new Response('oops', { status: 502 }))).toBe('unavailable')
+    expect(
+      await fetchLodgeSession(LODGE, TOKEN, async () => {
+        throw new Error('offline')
+      }),
+    ).toBe('unavailable')
+    expect(
+      await fetchLodgeSession(LODGE, TOKEN, async () => new Response(JSON.stringify({ user: { id: 'x' } }), { status: 200 })),
+    ).toBe('unavailable')
   })
 
   it('parses GET /api/session { user } including admin and apps', () => {
@@ -304,12 +195,48 @@ describe('lodge auth gate', () => {
     expect(nullUser).toBe('unauthorized')
   })
 
-  it('rejects a cookie signed with the wrong secret', async () => {
-    const token = await sign(claims({ apps: [SLUG] }), 'some-other-secret')
-    const decision = await authorizeRequest(cookieHeader(token), SECRET, LODGE, {
-      fetchLodge: async () => 'unavailable',
-    })
-    expect(decision.type).toBe('login')
+})
+
+describe('createLodgeSessionCache', () => {
+  it('reuses a confirmed session and coalesces parallel lookups', async () => {
+    let calls = 0
+    const lookup = async (): Promise<LodgeLookup> => {
+      calls += 1
+      return claims({ apps: [SLUG] })
+    }
+    const cached = createLodgeSessionCache(lookup)
+    const [a, b] = await Promise.all([cached(LODGE, 'tok'), cached(LODGE, 'tok')])
+    await cached(LODGE, 'tok')
+    expect(calls).toBe(1)
+    expect(a).toEqual(b)
+  })
+
+  it('never caches logouts or outages', async () => {
+    const answers: LodgeLookup[] = ['unauthorized', 'unavailable', claims()]
+    let calls = 0
+    const cached = createLodgeSessionCache(async () => answers[calls++])
+    expect(await cached(LODGE, 'tok')).toBe('unauthorized')
+    expect(await cached(LODGE, 'tok')).toBe('unavailable')
+    expect(typeof (await cached(LODGE, 'tok'))).toBe('object')
+    expect(calls).toBe(3)
+  })
+
+  it('asks the lodge again once the entry expires', async () => {
+    let clock = 0
+    let calls = 0
+    const cached = createLodgeSessionCache(
+      async () => {
+        calls += 1
+        return claims()
+      },
+      { ttlMs: 15_000, now: () => clock },
+    )
+    await cached(LODGE, 'tok')
+    clock = 14_999
+    await cached(LODGE, 'tok')
+    clock = 15_000
+    await cached(LODGE, 'tok')
+    expect(calls).toBe(2)
   })
 })
 
