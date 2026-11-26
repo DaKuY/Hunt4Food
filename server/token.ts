@@ -1,9 +1,8 @@
 /**
- * Lodge session token helper — same contract as
- * DaKuY/andrewcamero.com-orchestrator `src/lib/token.ts`.
- * Cookie name, HS256, and claim shape must stay aligned with andrewcamero.com.
+ * Base Camp session shape. Base Camp (andrewcamero.com) is the only verifier of
+ * the ac_session cookie; this app never checks its signature and holds no
+ * secret. See docs/PRODUCT-AUTH-CONTRACT.md in DaKuY/andrewcamero.com-orchestrator.
  */
-import { jwtVerify, type JWTPayload } from 'jose'
 
 export const SESSION_COOKIE = 'ac_session'
 
@@ -44,7 +43,7 @@ export function hasAppGrant(
   return apps.some((app) => typeof app === 'string' && app.toLowerCase() === want)
 }
 
-export function parseSessionPayload(payload: JWTPayload | Record<string, unknown>): SessionPayload | null {
+export function parseSessionPayload(payload: Record<string, unknown>): SessionPayload | null {
   const id = asNonEmptyString(payload.id) ?? asNonEmptyString(payload.sub)
   const email = asNonEmptyString(payload.email)
   const name = typeof payload.name === 'string' ? payload.name : undefined
@@ -58,21 +57,6 @@ export function parseSessionPayload(payload: JWTPayload | Record<string, unknown
   const role: Role = admin ? 'admin' : isRole(payload.role) ? payload.role : 'member'
 
   return { id, email, name, admin, role, apps, tokenVersion }
-}
-
-export async function verifySessionToken(
-  token: string,
-  secret: string,
-): Promise<SessionPayload | null> {
-  if (!token || !secret) return null
-  try {
-    const { payload } = await jwtVerify(token, new TextEncoder().encode(secret), {
-      algorithms: ['HS256'],
-    })
-    return parseSessionPayload(payload)
-  } catch {
-    return null
-  }
 }
 
 export function readCookie(cookieHeader: string | null | undefined, name: string): string | undefined {

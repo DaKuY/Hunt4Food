@@ -122,6 +122,12 @@ export type RankedRestaurant = Restaurant & {
   evidenceText?: string
   yelpId?: string
   sourceKind?: 'osm' | 'yelp' | 'google'
+  /**
+   * Shown because the healthy list came up short: a healthy pick outside the chosen focus,
+   * or a solid whole-food-friendly restaurant without clean-food evidence. Never pizza,
+   * burgers, fried chicken, fast food, bars or dessert.
+   */
+  nextBest?: boolean
 }
 
 export type TastePlace = {

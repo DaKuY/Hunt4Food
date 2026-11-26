@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { Fragment, lazy, Suspense, useEffect, useState } from 'react'
 import {
   cityCuisineFallbackLinks,
   googleMapsUrl,
@@ -17,6 +17,7 @@ import type { SeedOilInfo } from '../lib/seedOil'
 import { lunchVerdict } from '../lib/lunch'
 import { seedOilVerdict } from '../lib/seedOilStatus'
 import type { HealthyPrefs } from '../lib/healthySearch'
+import type { ProviderSources } from '../lib/providerDiscovery'
 import type { HealthyFocusId, RankedRestaurant } from '../lib/types'
 import { RatingsRow } from './RatingsRow'
 
@@ -43,6 +44,8 @@ type Props = {
   error: string | null
   healthyMode?: boolean
   searchStatus?: string | null
+  /** Which of Google / Yelp /api/discover actually searched (null before the first answer). */
+  providerSources?: ProviderSources | null
   openNowOnly: boolean
   hasWebsiteOnly: boolean
   healthyFocus: HealthyFocusId[]
@@ -107,6 +110,7 @@ export function ResultsStep({
   error,
   healthyMode = false,
   searchStatus = null,
+  providerSources = null,
   openNowOnly,
   hasWebsiteOnly,
   healthyFocus,
@@ -190,6 +194,7 @@ export function ResultsStep({
         <div className="result-body">
           <h3>
             {place.name}
+            {place.nextBest && <span className="next-best-badge">Next best</span>}
             {isFavorite && <span className="favorite-badge">Favorite</span>}
           </h3>
           <p className="meta">
@@ -361,6 +366,7 @@ export function ResultsStep({
           {searchStatus}
         </p>
       ) : null}
+      {!loading && places.length > 0 ? <SourcesLine sources={providerSources} healthyMode={healthyMode} /> : null}
 
       {healthyMode ? (
         <div className="filters chip-row wrap" role="group" aria-label="What kind of healthy">
@@ -556,9 +562,9 @@ export function ResultsStep({
 
       {healthyMode && !loading && places.length > 0 && places.length < 10 ? (
         <p className="muted small" aria-live="polite">
-          Only {places.length} healthy {places.length === 1 ? 'spot' : 'spots'} in this map area
-          {healthyFocus.length ? ' for your picks' : ''}. Hunt4Food won&apos;t pad the list with pizza or burgers — zoom
-          the map out or choose a neighborhood nearby to see more.
+          {places.length} {places.length === 1 ? 'pick' : 'picks'} nearby
+          {healthyFocus.length ? ' for your choice' : ''}. Hunt4Food never fills the list with pizza, burgers or
+          fast food — try a nearby town for more.
         </p>
       ) : null}
       {filtered.length < places.length && filtered.length > 0 ? (
@@ -567,7 +573,23 @@ export function ResultsStep({
         </p>
       ) : null}
 
-      <ol className="result-list">{filtered.map((place, index) => renderCard(place, index + 1))}</ol>
+      <ol className="result-list">
+        {filtered.map((place, index) => (
+          <Fragment key={place.id}>
+            {place.nextBest && !filtered[index - 1]?.nextBest ? (
+              <li className="next-best-divider">
+                <strong>Next best nearby</strong>
+                <span>
+                  {index === 0
+                    ? 'No exact healthy match turned up here, so these are the closest good options.'
+                    : 'Fewer clean-food signals, but solid picks to order around: grilled protein, vegetables, rice.'}
+                </span>
+              </li>
+            ) : null}
+            {renderCard(place, index + 1)}
+          </Fragment>
+        ))}
+      </ol>
 
       <div className="step-actions row">
         {!(loading && filtered.length === 0) && filtered.length > 0 && (
@@ -583,6 +605,20 @@ export function ResultsStep({
         </button>
       </div>
     </section>
+  )
+}
+
+function SourcesLine({ sources, healthyMode }: { sources: ProviderSources | null; healthyMode: boolean }) {
+  const searched = ['OpenStreetMap']
+  if (sources?.google) searched.push('Google')
+  if (sources?.yelp) searched.push('Yelp')
+  if (healthyMode) searched.push('review mentions')
+  const off = sources ? [!sources.google && 'Google', !sources.yelp && 'Yelp'].filter(Boolean) : []
+  return (
+    <p className="sources-line muted small">
+      Searched {searched.join(' · ')}
+      {off.length ? <> · {off.join(' and ')} not connected</> : null}
+    </p>
   )
 }
 

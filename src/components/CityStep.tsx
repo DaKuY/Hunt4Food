@@ -1,22 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { MapContainer, TileLayer, useMapEvents, Rectangle } from 'react-leaflet'
-import L from 'leaflet'
-import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png'
-import markerIcon from 'leaflet/dist/images/marker-icon.png'
-import markerShadow from 'leaflet/dist/images/marker-shadow.png'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { describeParsedQuery, parseSearchQuery } from '../lib/queryParser'
 import { cuisineById } from '../data/cuisines'
 import { coordsToCitySelection, reverseGeocode, searchCities, type GeocodeHit } from '../lib/geocode'
 import { loadRecentCities, pushRecentCity, recentToCitySelection, type RecentCity } from '../lib/taste'
+import { googleMapsUsable } from '../lib/googleMapsLoader'
 import type { CitySelection, MapBounds } from '../lib/types'
-import 'leaflet/dist/leaflet.css'
+import { GoogleAreaMap } from './GoogleMaps'
 
-// Fix default marker icons under Vite
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: markerIcon2x,
-  iconUrl: markerIcon,
-  shadowUrl: markerShadow,
-})
+const LeafletAreaMap = lazy(() => import('./LeafletAreaMap'))
 
 type Props = {
   onConfirm: (city: CitySelection) => void
@@ -24,28 +15,6 @@ type Props = {
   onAsk?: (text: string) => void
   onBack: () => void
   initial?: CitySelection | null
-}
-
-function BoundsWatcher({ onBounds }: { onBounds: (b: MapBounds, center: { lat: number; lon: number }) => void }) {
-  const map = useMapEvents({
-    moveend: () => {
-      const b = map.getBounds()
-      const c = map.getCenter()
-      onBounds(
-        { south: b.getSouth(), west: b.getWest(), north: b.getNorth(), east: b.getEast() },
-        { lat: c.lat, lon: c.lng },
-      )
-    },
-    zoomend: () => {
-      const b = map.getBounds()
-      const c = map.getCenter()
-      onBounds(
-        { south: b.getSouth(), west: b.getWest(), north: b.getNorth(), east: b.getEast() },
-        { lat: c.lat, lon: c.lng },
-      )
-    },
-  })
-  return null
 }
 
 /** A food plus a place ("healthy food in Coppell TX"), not just a city name. */
@@ -77,6 +46,7 @@ export function CityStep({ onConfirm, onAsk, onBack, initial }: Props) {
     return [40.7128, -74.006]
   })
   const [mapKey, setMapKey] = useState(0)
+  const [googleMap, setGoogleMap] = useState(() => googleMapsUsable())
   const askable = Boolean(onAsk)
   const skipSearchRef = useRef(Boolean(initial?.label || lastRecent))
 
@@ -225,22 +195,23 @@ export function CityStep({ onConfirm, onAsk, onBack, initial }: Props) {
     confirmCitySelection(draft)
   }
 
-  const rectBounds = useMemo(() => {
-    if (!draft) return null
-    return [
-      [draft.bounds.south, draft.bounds.west] as [number, number],
-      [draft.bounds.north, draft.bounds.east] as [number, number],
-    ]
-  }, [draft])
+  function watchBounds(bounds: MapBounds, center: { lat: number; lon: number }) {
+    setDraft((prev) => ({
+      label: prev?.label ?? `${center.lat.toFixed(3)}, ${center.lon.toFixed(3)}`,
+      center,
+      bounds,
+      source: 'map',
+    }))
+  }
 
   return (
     <section className="step city-step">
       <header className="step-header">
-        <p className="eyebrow">Hunt4Food · Step 1</p>
+        <p className="eyebrow">Hunt4Food · Choose an area</p>
         <h2>Where are you eating?</h2>
         <p className="lede">
-          Hunt what&apos;s good nearby — type a city, tap <strong>Use my location</strong>, pick a recent spot,
-          or zoom the map to a neighborhood and confirm that area.
+          Type a city, tap <strong>Use my location</strong>, pick a recent spot, or move the map to a
+          neighborhood and confirm that area. Then pick foods, or search above.
         </p>
       </header>
 
@@ -320,34 +291,20 @@ export function CityStep({ onConfirm, onAsk, onBack, initial }: Props) {
         >
           {locating ? '…' : '⌖'}
         </button>
-        <MapContainer
-          key={mapKey}
-          center={mapCenter}
-          zoom={draft ? 12 : 11}
-          className="city-map"
-          scrollWheelZoom
-        >
-          <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-            url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+        {googleMap ? (
+          <GoogleAreaMap
+            key={mapKey}
+            center={mapCenter}
+            zoom={draft ? 12 : 11}
+            rect={draft?.bounds ?? null}
+            onBounds={watchBounds}
+            onFail={() => setGoogleMap(false)}
           />
-          <BoundsWatcher
-            onBounds={(bounds, center) => {
-              setDraft((prev) => ({
-                label: prev?.label ?? `${center.lat.toFixed(3)}, ${center.lon.toFixed(3)}`,
-                center,
-                bounds,
-                source: 'map',
-              }))
-            }}
-          />
-          {rectBounds && (
-            <Rectangle
-              bounds={rectBounds}
-              pathOptions={{ color: '#9a7b52', weight: 2, fillOpacity: 0.08 }}
-            />
-          )}
-        </MapContainer>
+        ) : (
+          <Suspense fallback={<div className="city-map" />}>
+            <LeafletAreaMap key={mapKey} center={mapCenter} zoom={draft ? 12 : 11} rect={draft?.bounds ?? null} onBounds={watchBounds} />
+          </Suspense>
+        )}
         <p className="map-hint">Pan and zoom — the visible area becomes your search box.</p>
       </div>
 

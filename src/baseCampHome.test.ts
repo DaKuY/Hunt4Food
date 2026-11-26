@@ -102,10 +102,11 @@ describe('leave-to-lodge path', () => {
   })
 
   it('sends first-screen Back to the lodge instead of bouncing city↔cuisine', () => {
-    expect(app).toContain('onBack={leaveToLodge}')
+    // The search home screen's Back goes to Base Camp; the map picker's Back returns to search.
+    expect(app).toMatch(/className="ask-secondary"[\s\S]*onClick=\{leaveToLodge\}[\s\S]*Back to Base Camp/)
     expect(app).toContain('onBack={backFromCuisine}')
     expect(app).toMatch(/function backFromCuisine\(\) \{[\s\S]*leaveToLodge\(\)/)
-    expect(app).toMatch(/<CityStep[\s\S]*onBack=\{leaveToLodge\}/)
+    expect(app).toMatch(/<CityStep[\s\S]*onBack=\{\(\) => \{\s*setShowMapPicker\(false\)/)
     expect(cityStep).toMatch(/<button type="button" className="btn ghost" onClick=\{onBack\}>\s*Back/)
     expect(app).not.toMatch(/onBack=\{\(\) => setStep\('city'\)\}/)
   })

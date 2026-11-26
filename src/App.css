@@ -9,9 +9,9 @@
   inset: 0;
   z-index: -1;
   background:
-    radial-gradient(1100px 520px at 8% -8%, rgba(154, 123, 82, 0.14), transparent 55%),
-    radial-gradient(900px 480px at 92% 4%, rgba(232, 220, 200, 0.55), transparent 50%),
-    linear-gradient(160deg, #faf8f4 0%, #f7f3eb 48%, #f3eee7 100%);
+    radial-gradient(1100px 520px at 8% -8%, rgba(133, 99, 42, 0.1), transparent 55%),
+    radial-gradient(900px 480px at 92% 4%, rgba(231, 220, 203, 0.55), transparent 50%),
+    var(--ivory);
 }
 
 .atmosphere::after {
@@ -261,28 +261,28 @@ main {
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.72);
   color: var(--text);
-  border-radius: var(--radius);
+  border-radius: var(--radius-sm);
   padding: 0.85rem 1rem;
   outline: none;
 }
 
 .field input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(154, 123, 82, 0.18);
+  box-shadow: 0 0 0 3px rgba(196, 162, 101, 0.3);
 }
 
 .field select {
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.72);
   color: var(--text);
-  border-radius: var(--radius);
+  border-radius: var(--radius-sm);
   padding: 0.85rem 1rem;
   outline: none;
 }
 
 .field select:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(154, 123, 82, 0.18);
+  box-shadow: 0 0 0 3px rgba(196, 162, 101, 0.3);
 }
 
 .btn {
@@ -310,8 +310,10 @@ main {
 }
 
 .btn.primary {
-  background: var(--accent);
-  color: #faf8f4;
+  background: linear-gradient(180deg, var(--forest-hi), var(--forest) 55%, var(--forest-deep));
+  border-color: var(--forest-deep);
+  color: var(--ivory);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 6px 16px -8px rgba(6, 48, 27, 0.5);
 }
 
 .btn.ghost {
@@ -346,12 +348,12 @@ main {
 }
 
 .chip:hover:not(:disabled) {
-  border-color: rgba(154, 123, 82, 0.55);
+  border-color: rgba(133, 99, 42, 0.55);
   transform: translateY(-1px);
 }
 
 .chip.on {
-  background: rgba(154, 123, 82, 0.12);
+  background: rgba(133, 99, 42, 0.1);
   border-color: var(--accent);
   color: var(--accent);
 }
@@ -363,7 +365,7 @@ main {
 }
 
 .chip.primary {
-  background: rgba(154, 123, 82, 0.12);
+  background: rgba(133, 99, 42, 0.1);
   border-color: var(--accent);
   color: var(--accent);
   font-weight: 600;
@@ -486,7 +488,7 @@ main {
 }
 
 .hit-list button:hover {
-  background: rgba(154, 123, 82, 0.06);
+  background: rgba(133, 99, 42, 0.06);
 }
 
 .map-shell {
@@ -534,7 +536,7 @@ main {
 }
 
 .leaflet-bar a:hover {
-  background: rgba(154, 123, 82, 0.1);
+  background: rgba(133, 99, 42, 0.1);
   color: var(--accent);
 }
 
@@ -594,8 +596,8 @@ main {
 }
 
 .result-card--favorite {
-  border-color: rgba(154, 123, 82, 0.45);
-  background: rgba(154, 123, 82, 0.07);
+  border-color: rgba(133, 99, 42, 0.45);
+  background: rgba(133, 99, 42, 0.07);
 }
 
 .favorite-badge {
@@ -608,7 +610,7 @@ main {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   vertical-align: middle;
-  background: rgba(154, 123, 82, 0.16);
+  background: rgba(133, 99, 42, 0.16);
   color: var(--accent);
 }
 
@@ -629,11 +631,11 @@ main {
   padding: 0.2rem 0.55rem;
   border-radius: var(--radius-sm);
   border: 1px solid var(--line);
-  background: rgba(154, 123, 82, 0.08);
+  background: rgba(133, 99, 42, 0.08);
 }
 
 .seed-oil-badge a:hover {
-  border-color: rgba(154, 123, 82, 0.45);
+  border-color: rgba(133, 99, 42, 0.45);
 }
 
 .cuisine-group {
@@ -673,7 +675,7 @@ main {
   place-items: center;
   font-family: var(--font-display);
   font-weight: 700;
-  background: rgba(154, 123, 82, 0.14);
+  background: rgba(133, 99, 42, 0.14);
   color: var(--accent);
 }
 
@@ -734,7 +736,7 @@ main {
 .skeleton-card {
   height: 110px;
   border-radius: var(--radius);
-  background: linear-gradient(90deg, rgba(28, 25, 23, 0.04), rgba(154, 123, 82, 0.1), rgba(28, 25, 23, 0.04));
+  background: linear-gradient(90deg, rgba(28, 25, 23, 0.04), rgba(133, 99, 42, 0.1), rgba(28, 25, 23, 0.04));
   background-size: 200% 100%;
   animation: shimmer 1.2s linear infinite;
 }
@@ -765,8 +767,8 @@ main {
 }
 
 .banner {
-  background: rgba(154, 123, 82, 0.1);
-  border: 1px solid rgba(154, 123, 82, 0.3);
+  background: rgba(133, 99, 42, 0.1);
+  border: 1px solid rgba(133, 99, 42, 0.3);
   color: #7a5f3a;
   padding: 0.7rem 0.9rem;
   border-radius: var(--radius);
@@ -936,19 +938,66 @@ main {
   }
 }
 
-/* Plain-language search */
+/* Plain-language search: the main way to search (AskBar). */
 .ask-bar {
   display: grid;
-  gap: 0.5rem;
+  /* Keep the column at the card width so long chips wrap instead of overflowing. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.6rem;
   margin: 0 0 1.25rem;
-  padding: 0.9rem 1rem;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.7);
+  padding: 1rem;
+  border: 0.5px solid var(--linen-strong);
+  border-radius: var(--radius);
+  background: var(--porcelain);
+  box-shadow: var(--shadow);
+}
+
+.ask-bar--hero {
+  gap: 0.8rem;
+  padding: 1.35rem 1.1rem 1.15rem;
+  margin-top: 0.5rem;
+}
+
+.ask-hero-head {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.ask-hero-head .eyebrow {
+  margin: 0;
+}
+
+.ask-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(1.75rem, 7.4vw, 2.4rem);
+  line-height: 1.1;
+  color: var(--forest-ink);
+}
+
+.ask-lede {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.98rem;
+  line-height: 1.45;
 }
 
 .ask-label {
-  font-weight: 650;
+  font-weight: 600;
+  color: var(--forest-ink);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .ask-row {
@@ -965,18 +1014,159 @@ main {
   font: inherit;
 }
 
+.ask-field {
+  position: relative;
+  display: flex;
+  flex: 1;
+  align-items: center;
+  min-width: 0;
+}
+
+.ask-bar .ask-field input {
+  width: 100%;
+  min-height: 52px;
+  padding: 0.75rem 2.6rem 0.75rem 2.6rem;
+  border: 1px solid var(--linen-strong);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  color: var(--text);
+  /* 17px keeps iPhone Safari from zooming into the box. */
+  font: inherit;
+  font-size: 17px;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.ask-bar .ask-field input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  display: none;
+}
+
+.ask-bar .ask-field input::placeholder {
+  color: #8a8d82;
+}
+
+.ask-bar .ask-field input:focus,
+.field input:focus-visible {
+  outline: none;
+  border-color: var(--forest);
+  box-shadow: 0 0 0 3px rgba(196, 162, 101, 0.35);
+}
+
+.ask-icon,
+.ask-pin {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ask-icon {
+  position: absolute;
+  left: 0.8rem;
+  width: 20px;
+  height: 20px;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.ask-clear {
+  position: absolute;
+  right: 0.35rem;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ask-submit {
+  flex: 0 0 auto;
+  min-height: 52px;
+  padding-inline: 1.1rem;
+  font-size: 1rem;
+}
+
+.ask-area {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.ask-pin {
+  width: 16px;
+  height: 16px;
+  color: var(--brass);
+}
+
+.link-button {
+  margin-left: 0.25rem;
+  padding: 0.35rem 0.1rem;
+  border: 0;
+  background: none;
+  color: var(--forest);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: var(--brass-soft);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
 .ask-message {
   margin: 0;
   font-size: 0.92rem;
 }
 
 .ask-message.problem {
-  color: #9a3b2a;
+  color: var(--terracotta);
 }
 
-.ask-examples .chip {
-  font-size: 0.85rem;
-  padding: 0.4rem 0.7rem;
+/* Quick picks wrap on the home screen and scroll sideways above results. */
+.ask-picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.ask-bar--compact .ask-picks {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  margin-inline: -1rem;
+  padding: 0.1rem 1rem 0.2rem;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.ask-bar--compact .ask-picks::-webkit-scrollbar {
+  display: none;
+}
+
+.ask-picks .chip {
+  flex: 0 0 auto;
+  min-height: 40px;
+  padding: 0.45rem 0.85rem;
+  font: inherit;
+  font-size: 0.92rem;
+  text-align: left;
+}
+
+.ask-secondary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin: -0.25rem 0 1.25rem;
 }
 
 .seed-oil-verdict {
@@ -991,4 +1181,78 @@ main {
 
 .seed-oil-verdict.unknown {
   color: #8a6a3f;
+}
+
+/* Healthy list came up short: the closest good options, clearly labeled. */
+.next-best-divider {
+  list-style: none;
+  display: grid;
+  gap: 0.2rem;
+  margin: 0.5rem 0 0;
+  padding: 0.85rem 1rem;
+  border-left: 3px solid var(--brass-soft);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: rgba(133, 99, 42, 0.06);
+}
+
+.next-best-divider strong {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  color: var(--forest-ink);
+}
+
+.next-best-divider span {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.next-best-badge {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.1rem 0.55rem;
+  border: 1px solid var(--brass-soft);
+  border-radius: 999px;
+  color: var(--brass);
+  font-family: var(--font-body);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.sources-line {
+  margin: 0.25rem 0 0.75rem;
+}
+
+/* Google Maps (GoogleMaps.tsx). */
+.google-map {
+  width: 100%;
+  background: var(--linen);
+}
+
+.gmap-info {
+  display: grid;
+  gap: 0.3rem;
+  max-width: 220px;
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  color: var(--ink-strong);
+}
+
+.gmap-info a {
+  color: var(--forest);
+  font-weight: 600;
+}
+
+.gmap-info-tag {
+  justify-self: start;
+  padding: 0.05rem 0.45rem;
+  border: 1px solid var(--brass-soft);
+  border-radius: 999px;
+  color: var(--brass);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }

@@ -1,74 +1,153 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 
 type Props = {
   onAsk: (text: string) => void
   busy: boolean
-  /** What was understood ("Mexican · near Coppell TX · no seed oils") or a problem to fix. */
+  /** What was understood ("Healthy · salmon & seafood · near Coppell") or a problem to fix. */
   message: { kind: 'understood' | 'problem'; text: string } | null
+  /** hero: the home screen. compact: above the picker and results. */
+  variant?: 'hero' | 'compact'
+  /** Where an unplaced search runs ("Coppell"); null means the phone's location. */
+  areaLabel?: string | null
+  /** Open the map / city picker. */
+  onChangeArea?: () => void
 }
 
-const EXAMPLES = [
-  "Mexican near Coppell TX that doesn't use seed oils",
-  'healthy steak or salmon near Frisco',
-  'cheap gluten-free Italian within 5 miles',
-]
+/** Healthy first: one tap runs the search where you are. */
+function quickPicks(areaLabel: string | null | undefined) {
+  return [
+    { label: areaLabel ? `Healthy near ${areaLabel}` : 'Healthy near me', query: 'healthy' },
+    { label: 'True Food Kitchen', query: 'True Food Kitchen' },
+    { label: 'Smoothies & açaí', query: 'smoothie and acai bowls' },
+    { label: 'Wild salmon', query: 'salmon' },
+    { label: 'Grass-fed', query: 'grass fed steak' },
+    { label: 'No seed oils', query: 'healthy no seed oils' },
+  ]
+}
 
-/** One-box plain-language search: type what you want instead of stepping through the picker. */
-export function AskBar({ onAsk, busy, message }: Props) {
+function SearchIcon() {
+  return (
+    <svg className="ask-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <circle cx="10.5" cy="10.5" r="6.5" />
+      <path d="m15.5 15.5 5 5" />
+    </svg>
+  )
+}
+
+function PinIcon() {
+  return (
+    <svg className="ask-pin" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11Z" />
+      <circle cx="12" cy="10" r="2.3" />
+    </svg>
+  )
+}
+
+/**
+ * The main way to search: type what you want in plain words ("salmon bowl near Coppell",
+ * "True Food Kitchen", "grass-fed burger no seed oils") or tap a healthy quick pick.
+ */
+export function AskBar({ onAsk, busy, message, variant = 'compact', areaLabel = null, onChangeArea }: Props) {
   const [text, setText] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+  const hero = variant === 'hero'
 
   function submit(value: string) {
     const trimmed = value.trim()
-    if (!trimmed || busy) return
+    if (busy) return
+    if (!trimmed) {
+      inputRef.current?.focus()
+      return
+    }
+    // Drop the iPhone keyboard so the results are visible.
+    inputRef.current?.blur()
     onAsk(trimmed)
   }
 
   return (
     <form
-      className="ask-bar"
+      className={`ask-bar ask-bar--${variant}`}
       role="search"
       onSubmit={(event) => {
         event.preventDefault()
         submit(text)
       }}
     >
-      <label className="ask-label" htmlFor="ask-input">
-        Ask Hunt4Food
+      {hero ? (
+        <header className="ask-hero-head">
+          <p className="eyebrow">Hunt4Food</p>
+          <h1 className="ask-title">What are you hungry for?</h1>
+          <p className="ask-lede">
+            Healthy first — True Food Kitchen–style spots, smoothie bowls, wild salmon, grass-fed and no seed
+            oils — with the next best nearby when nothing is perfect.
+          </p>
+        </header>
+      ) : null}
+      <label className={hero ? 'visually-hidden' : 'ask-label'} htmlFor="ask-input">
+        Search Hunt4Food
       </label>
       <div className="ask-row">
-        <input
-          id="ask-input"
-          value={text}
-          onChange={(event) => setText(event.target.value)}
-          placeholder={`e.g. "${EXAMPLES[0]}"`}
-          autoComplete="off"
-          enterKeyHint="search"
-        />
-        <button type="submit" className="btn primary" disabled={busy || !text.trim()}>
+        <div className="ask-field">
+          <SearchIcon />
+          <input
+            ref={inputRef}
+            id="ask-input"
+            type="search"
+            inputMode="search"
+            enterKeyHint="search"
+            autoComplete="off"
+            value={text}
+            onChange={(event) => setText(event.target.value)}
+            placeholder={hero ? 'e.g. “wild salmon”' : 'Search again…'}
+          />
+          {text ? (
+            <button
+              type="button"
+              className="ask-clear"
+              aria-label="Clear search"
+              onClick={() => {
+                setText('')
+                inputRef.current?.focus()
+              }}
+            >
+              ×
+            </button>
+          ) : null}
+        </div>
+        <button type="submit" className="btn primary ask-submit" disabled={busy} aria-busy={busy}>
           {busy ? 'Searching…' : 'Search'}
         </button>
       </div>
+      <p className="ask-area">
+        <PinIcon />
+        <span>{areaLabel ? `Near ${areaLabel}` : 'Near your location'}</span>
+        {onChangeArea ? (
+          <button type="button" className="link-button" onClick={onChangeArea}>
+            Choose an area
+          </button>
+        ) : null}
+      </p>
       {message ? (
         <p className={message.kind === 'problem' ? 'ask-message problem' : 'ask-message'} aria-live="polite">
           {message.kind === 'understood' ? <>Searching for: <strong>{message.text}</strong></> : message.text}
         </p>
-      ) : (
-        <div className="chip-row wrap ask-examples">
-          {EXAMPLES.map((example) => (
-            <button
-              key={example}
-              type="button"
-              className="chip ghost"
-              onClick={() => {
-                setText(example)
-                submit(example)
-              }}
-            >
-              {example}
-            </button>
-          ))}
-        </div>
-      )}
+      ) : null}
+      <div className="ask-picks" aria-label="Quick healthy searches">
+        {quickPicks(areaLabel).map((pick) => (
+          <button
+            key={pick.label}
+            type="button"
+            className="chip ghost"
+            disabled={busy}
+            onClick={() => {
+              setText(pick.query)
+              submit(pick.query)
+            }}
+          >
+            {pick.label}
+          </button>
+        ))}
+      </div>
     </form>
   )
 }

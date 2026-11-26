@@ -15,8 +15,8 @@ import { usePlaceDishes } from './hooks/usePlaceDishes'
 import { usePlaceRatings } from './hooks/usePlaceRatings'
 import { usePlaceSeedOil } from './hooks/usePlaceSeedOil'
 import { buildSearchShareUrl } from './lib/links'
-import { coordsToCitySelection, searchCities, type GeocodeHit } from './lib/geocode'
-import { describeParsedQuery, parseSearchQuery } from './lib/queryParser'
+import { coordsToCitySelection, findTown, searchCities, type GeocodeHit } from './lib/geocode'
+import { describeParsedQuery, parseSearchQuery, withoutPlaceGuess } from './lib/queryParser'
 import { lunchVerdict } from './lib/lunch'
 import { applyRequirements } from './lib/seedOilStatus'
 import { ensureCacheGeneration, pruneExpiredCache } from './lib/storage'
@@ -24,7 +24,13 @@ import { attachSeedOilSignals, mineReviewEvidence, pickHealthyLanes, runHealthyH
 import { isHealthyFocusId } from './lib/healthySignals'
 import type { PriceLevel } from './lib/priceRange'
 import { fetchRestaurants } from './lib/overpass'
-import { discoverProviderCandidates, lunchSpecialTerms, mergeProviderCandidates } from './lib/providerDiscovery'
+import {
+  discoverProviderCandidates,
+  lastProviderSources,
+  lunchSpecialTerms,
+  mergeProviderCandidates,
+  type ProviderSources,
+} from './lib/providerDiscovery'
 import { rankRestaurants } from './lib/rank'
 import { ratingQualityAdjustment } from './lib/ratings'
 import { seedOilGradeScore } from './lib/seedOil'
@@ -103,6 +109,26 @@ function cityFromParams(params: URLSearchParams): CitySelection | null {
 }
 
 /** "Near Coppell TX": the place's centre with its area capped at about ±5 miles, so a big city's full extent doesn't swamp the search. */
+/**
+ * Healthy hunts look a little wider than a suburb's own outline (Coppell is ~6 mi across),
+ * so the list can reach the True Food Kitchen or smoothie bar one town over.
+ */
+const HEALTHY_MIN_HALF_SPAN = { lat: 0.07, lon: 0.085 }
+/** "Coppell, Texas, United States" → "Coppell". */
+function shortPlaceLabel(label: string): string {
+  return label.split(',')[0]!.trim() || label
+}
+
+function healthyBounds(selection: CitySelection): MapBounds {
+  const { center, bounds } = selection
+  return {
+    south: Math.min(bounds.south, center.lat - HEALTHY_MIN_HALF_SPAN.lat),
+    north: Math.max(bounds.north, center.lat + HEALTHY_MIN_HALF_SPAN.lat),
+    west: Math.min(bounds.west, center.lon - HEALTHY_MIN_HALF_SPAN.lon),
+    east: Math.max(bounds.east, center.lon + HEALTHY_MIN_HALF_SPAN.lon),
+  }
+}
+
 function nearSelection(hit: GeocodeHit): CitySelection {
   const span = 0.08
   return {
@@ -226,6 +252,9 @@ function SearchFlow() {
   const [healthyStatus, setHealthyStatus] = useState<string | null>(null)
   const [scrollToResultsKey, setScrollToResultsKey] = useState(0)
   const [cityPickedByUser, setCityPickedByUser] = useState(false)
+  const [providerSources, setProviderSources] = useState<ProviderSources | null>(null)
+  // The Ask box is the main search; the map / city picker opens on request.
+  const [showMapPicker, setShowMapPicker] = useState(false)
   const searchAbortRef = useRef<AbortController | null>(null)
   const prefetchPromiseRef = useRef<Promise<Restaurant[]> | null>(null)
   const poolRef = useRef<Restaurant[]>([])
@@ -371,7 +400,7 @@ function SearchFlow() {
       })
 
       return healthyMode
-        ? pickHealthyLanes(scored, scored.length, undefined, [], healthyPrefsRef.current)
+        ? pickHealthyLanes(scored, scored.length, undefined, healthyFocusRef.current, healthyPrefsRef.current)
         : [...scored].sort((a, b) => b.score - a.score)
     })
   }, [ratingsMap, healthyMode, displayPlaces.length])
@@ -409,7 +438,7 @@ function SearchFlow() {
 
       const withSignals = attachSeedOilSignals(scored, seedOilMap)
       return healthyMode
-        ? pickHealthyLanes(withSignals, withSignals.length, undefined, [], healthyPrefsRef.current)
+        ? pickHealthyLanes(withSignals, withSignals.length, undefined, healthyFocusRef.current, healthyPrefsRef.current)
         : [...withSignals].sort((a, b) => b.score - a.score)
     })
   }, [dietary, healthyMode, seedOilMap, seedOilLoading, displayPlaces.length])
@@ -431,7 +460,7 @@ function SearchFlow() {
         setDisplayPlaces([])
         setHealthyStatus('Searching nearby, then reading reviews for grass-fed, clean oils, and healthy picks…')
         try {
-          const juicePromise = fetchRestaurants(selection.bounds, ctrl.signal, { includeJuiceShops: true }).then(
+          const juicePromise = fetchRestaurants(healthyBounds(selection), ctrl.signal, { includeJuiceShops: true }).then(
             (raw) => {
               poolRef.current = raw
               setRawPlaces(raw)
@@ -463,6 +492,7 @@ function SearchFlow() {
           })
           if (ctrl.signal.aborted) return
           healthyPoolRef.current = result.pool
+          setProviderSources(lastProviderSources())
           setDisplayPlaces(result.displayed)
           setSeenIds(new Set(result.displayed.map((p) => p.id)))
           setLoading(false)
@@ -521,6 +551,7 @@ function SearchFlow() {
 
       const providerCandidates = await providerPromise
       if (ctrl.signal.aborted) return
+      setProviderSources(lastProviderSources())
 
       const merged = mergeProviderCandidates(osmPlaces, providerCandidates, selection.label)
       if (merged.length) {
@@ -737,29 +768,30 @@ function SearchFlow() {
 
   /** Plain-language search: parse, find the place, set every filter, then search. */
   async function askSearch(text: string, picked: CuisineId[] = cuisines) {
-    const parsed = parseSearchQuery(text)
-    // "in Dallas" typed under foods already picked with the chips keeps those foods.
-    if (!parsed.cuisines.length && !parsed.healthy && !parsed.keyword && picked.length) {
-      parsed.healthy = picked.includes('healthy')
-      parsed.cuisines = picked.filter((id) => id !== 'healthy')
-    }
-    // "food in Grapevine TX": a place with no food named means the best restaurants there.
-    const anyFood = !parsed.cuisines.length && !parsed.healthy && !parsed.keyword
-    if (anyFood && !parsed.location && !parsed.nearMe) {
-      window.scrollTo({ top: 0, behavior: 'smooth' })
-      setAskMessage({
-        kind: 'problem',
-        text: parsed.lunch
-          ? 'Add a food with the lunch, e.g. “healthy lunch special near Coppell TX”.'
-          : 'Add a food or dish, e.g. “Mexican near Coppell TX without seed oils”.',
-      })
-      return
-    }
+    let parsed = parseSearchQuery(text)
     setAsking(true)
     setAskMessage(null)
     try {
+      // "healthy food Coppell", "acai bowl plano": trailing words that name a town are the place.
+      let guessedTown: GeocodeHit | null = null
+      if (!parsed.location && parsed.placeGuess) {
+        guessedTown = await findTown(parsed.placeGuess, city?.center).catch(() => null)
+        parsed = guessedTown
+          ? { ...parsed, location: parsed.placeGuess, placeGuess: null, nearMe: false }
+          : withoutPlaceGuess(parsed)
+      }
+      // "in Dallas" typed under foods already picked with the chips keeps those foods.
+      if (!parsed.cuisines.length && !parsed.healthy && !parsed.keyword && picked.length) {
+        parsed.healthy = picked.includes('healthy')
+        parsed.cuisines = picked.filter((id) => id !== 'healthy')
+      }
+      // No food named ("Coppell", "food in Grapevine TX", "lunch"): Hunt4Food's healthy picks.
+      if (!parsed.cuisines.length && !parsed.healthy && !parsed.keyword) parsed = { ...parsed, healthy: true }
+
       let selection = city
-      if (parsed.location) {
+      if (guessedTown) {
+        selection = nearSelection(guessedTown)
+      } else if (parsed.location) {
         const hits = await searchCities(parsed.location).catch(() => [] as GeocodeHit[])
         if (!hits.length) {
           setAskMessage({ kind: 'problem', text: `Couldn’t find “${parsed.location}”. Try “City, ST”, e.g. “Coppell, TX”.` })
@@ -797,7 +829,6 @@ function SearchFlow() {
       setAskMessage({
         kind: 'understood',
         text: [
-          ...(anyFood ? ['Restaurants'] : []),
           ...describeParsedQuery({ ...parsed, location: null, nearMe: false }, (id) => cuisineById(id).label),
           `near ${selection.label}`,
         ].join(' · '),
@@ -822,9 +853,18 @@ function SearchFlow() {
     void runSearch(city, cuisines, dietary, keyword)
   }
 
+  function openMapPicker() {
+    searchAbortRef.current?.abort()
+    setShowMapPicker(true)
+    setStep('city')
+    window.setTimeout(() => document.querySelector('.city-step')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
+  }
+
   const startNewCitySearch = useCallback(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' })
     searchAbortRef.current?.abort()
+    setShowMapPicker(false)
+    setAskMessage(null)
     setStep('city')
     setCity(null)
     setCuisines([])
@@ -880,6 +920,7 @@ function SearchFlow() {
 
   function backFromCuisine() {
     if (cityPickedByUser) {
+      setShowMapPicker(true)
       setStep('city')
       return
     }
@@ -888,8 +929,25 @@ function SearchFlow() {
 
   return (
     <>
-      <AskBar onAsk={(text) => void askSearch(text)} busy={asking} message={askMessage} />
-      {step === 'city' && (
+      <AskBar
+        onAsk={(text) => void askSearch(text)}
+        busy={asking}
+        message={askMessage}
+        variant={step === 'city' && !showMapPicker ? 'hero' : 'compact'}
+        areaLabel={city ? shortPlaceLabel(city.label) : null}
+        onChangeArea={openMapPicker}
+      />
+      {step === 'city' && !showMapPicker && !resolvingLocation && (
+        <div className="ask-secondary">
+          <button type="button" className="btn ghost" onClick={openMapPicker}>
+            Choose an area on the map
+          </button>
+          <a href={LODGE_HOME} className="btn ghost" onClick={leaveToLodge}>
+            Back to Base Camp
+          </a>
+        </div>
+      )}
+      {step === 'city' && (showMapPicker || resolvingLocation) && (
         resolvingLocation ? (
           <section className="step">
             <p className="muted">Finding your location…</p>
@@ -904,7 +962,10 @@ function SearchFlow() {
             <CityStep
               onConfirm={(selection) => confirmCity(selection, true)}
               onAsk={(text) => void askSearch(text)}
-              onBack={leaveToLodge}
+              onBack={() => {
+                setShowMapPicker(false)
+                window.scrollTo({ top: 0, behavior: 'smooth' })
+              }}
               initial={city}
             />
           </Suspense>
@@ -946,6 +1007,7 @@ function SearchFlow() {
           error={error}
           healthyMode={healthyMode}
           searchStatus={healthyStatus}
+          providerSources={providerSources}
           showSeedOil={dietary.includes('no_seed_oils') || healthyMode}
           openNowOnly={openNowOnly}
           hasWebsiteOnly={hasWebsiteOnly}
@@ -1164,7 +1226,7 @@ function Shell() {
         <nav>
           {searchNav?.showNewCity && (
             <button type="button" className="topbar-link" onClick={searchNav.onNewCity}>
-              New city
+              New search
             </button>
           )}
           <Link to="/taste">My Taste</Link>
@@ -1183,11 +1245,11 @@ function Shell() {
       </main>
       <footer className="site-footer">
         <p>
-          <BrandMark size="sm" /> · Place data ©{' '}
+          <BrandMark size="sm" /> · Maps by Google. Places from Google, Yelp and ©{' '}
           <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">
             OpenStreetMap contributors
           </a>
-          . Ratings from Google, Yelp, and TripAdvisor when available. Seed-oil chain grades from{' '}
+          ; ratings from Google, Yelp, and TripAdvisor when available. Seed-oil chain grades from{' '}
           <a href="https://seedoiltracker.com" target="_blank" rel="noreferrer">
             Seed Oil Tracker
           </a>
