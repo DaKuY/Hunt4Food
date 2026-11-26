@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { cuisineById } from '../data/cuisines'
-import { describeParsedQuery, parseSearchQuery } from './queryParser'
+import { describeParsedQuery, parseSearchQuery, withoutPlaceGuess } from './queryParser'
 
 describe('parseSearchQuery', () => {
   it('understands the example request', () => {
@@ -109,5 +109,40 @@ describe('parseSearchQuery lunch', () => {
     expect(parseSearchQuery('healthy smoothies near Frisco')).toMatchObject({ healthyAvoid: [], healthyFocus: ['smoothie'] })
     expect(parseSearchQuery('healthy breakfast')).toMatchObject({ quick: false })
     expect(describeParsedQuery(noSmoothies, (id) => id)).toEqual(['Healthy', 'near you', 'no smoothies'])
+  })
+
+  it('keeps a healthy brand whole and runs the healthy hunt for it', () => {
+    expect(parseSearchQuery('true food kitchen')).toMatchObject({ healthy: true, brand: 'True Food Kitchen', keyword: 'True Food Kitchen', location: null })
+    expect(parseSearchQuery('True Food Kitchen near Southlake')).toMatchObject({ brand: 'True Food Kitchen', location: 'southlake' })
+    expect(parseSearchQuery('tropical smoothie frisco')).toMatchObject({
+      brand: 'Tropical Smoothie Cafe', healthyFocus: ['smoothie'], placeGuess: 'frisco',
+    })
+  })
+
+  it('treats smoothies, salmon, grass-fed and no seed oils as the healthy hunt', () => {
+    expect(parseSearchQuery('smoothies near me')).toMatchObject({ healthy: true, healthyFocus: ['smoothie'], nearMe: true, cuisines: [] })
+    expect(parseSearchQuery('salmon')).toMatchObject({ healthy: true, healthyFocus: ['seafood'], cuisines: [] })
+    expect(parseSearchQuery('grass fed steak Frisco TX')).toMatchObject({ healthy: true, healthyFocus: ['steak'], dietary: ['grass_fed'], location: 'frisco tx' })
+    expect(parseSearchQuery('no seed oil restaurants')).toMatchObject({ healthy: true, dietary: ['no_seed_oils'] })
+    // A regular cuisine stays that cuisine, with the requirement as a filter.
+    expect(parseSearchQuery('Mexican near Coppell TX without seed oils')).toMatchObject({ healthy: false, cuisines: ['mexican'], dietary: ['no_seed_oils'] })
+    // Plain "steak" is a steak search; grass-fed makes it healthy.
+    expect(parseSearchQuery('steak')).toMatchObject({ healthy: false, cuisines: ['steak'] })
+  })
+
+  it('guesses a town typed without "in" or "near", and gives it back when it is not one', () => {
+    expect(parseSearchQuery('healthy food Coppell')).toMatchObject({ healthy: true, location: null, placeGuess: 'coppell' })
+    expect(parseSearchQuery('acai bowl plano')).toMatchObject({ healthy: true, healthyFocus: ['smoothie'], placeGuess: 'plano' })
+    expect(parseSearchQuery('Coppell')).toMatchObject({ placeGuess: 'coppell', keyword: '' })
+    expect(parseSearchQuery('healthy food in Coppell')).toMatchObject({ location: 'coppell', placeGuess: null })
+    expect(parseSearchQuery('smoothies near me')).toMatchObject({ placeGuess: null })
+    const birria = parseSearchQuery('birria')
+    expect(birria.placeGuess).toBe('birria')
+    expect(withoutPlaceGuess(birria)).toMatchObject({ keyword: 'birria', placeGuess: null })
+  })
+
+  it('names the kind of healthy in the confirmation line', () => {
+    expect(describeParsedQuery(parseSearchQuery('healthy salmon near Coppell TX'), (id) => id)).toEqual(['Healthy', 'salmon & seafood', 'near Coppell TX'])
+    expect(describeParsedQuery(parseSearchQuery('true food kitchen'), (id) => id)).toEqual(['Healthy', '“True Food Kitchen”'])
   })
 })

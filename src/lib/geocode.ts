@@ -10,6 +10,8 @@ async function throttleGeocode(): Promise<void> {
 
 export type GeocodeHit = {
   label: string
+  /** The place's own name ("Coppell"), when the geocoder gives one. */
+  name?: string
   lat: number
   lon: number
   south: number
@@ -27,11 +29,20 @@ function bboxFromPoint(lat: number, lon: number, delta = 0.08) {
   }
 }
 
-async function searchPhoton(query: string, signal?: AbortSignal): Promise<GeocodeHit[]> {
+async function searchPhoton(
+  query: string,
+  signal?: AbortSignal,
+  near?: { lat: number; lon: number },
+): Promise<GeocodeHit[]> {
   const url = new URL('https://photon.komoot.io/api/')
   url.searchParams.set('q', query)
   url.searchParams.set('limit', '6')
   url.searchParams.set('lang', 'en')
+  if (near) {
+    // Prefer the Coppell next door over one across the world.
+    url.searchParams.set('lat', String(near.lat))
+    url.searchParams.set('lon', String(near.lon))
+  }
   // Prefer places over streets
   url.searchParams.set('osm_tag', 'place:city')
   url.searchParams.append('osm_tag', 'place:town')
@@ -70,8 +81,28 @@ async function searchPhoton(query: string, signal?: AbortSignal): Promise<Geocod
     } else {
       bounds = bboxFromPoint(lat, lon)
     }
-    return { label: label || p.name || query, lat, lon, ...bounds }
+    return { label: label || p.name || query, name: p.name, lat, lon, ...bounds }
   })
+}
+
+function placeKey(value: string): string {
+  return value.toLowerCase().replace(/^(?:city|town|village) of\s+/, '').replace(/[^a-z0-9]/g, '')
+}
+
+/**
+ * Is this phrase a town? Used for searches typed without "in"/"near" ("healthy food Coppell").
+ * Only an exact name match counts, so "birria" or "pho" stays a food.
+ */
+export async function findTown(
+  phrase: string,
+  near?: { lat: number; lon: number },
+  signal?: AbortSignal,
+): Promise<GeocodeHit | null> {
+  const want = placeKey(phrase)
+  if (want.length < 3) return null
+  await throttleGeocode()
+  const hits = await searchPhoton(phrase, signal, near).catch(() => [] as GeocodeHit[])
+  return hits.find((hit) => hit.name && placeKey(hit.name) === want) ?? null
 }
 
 async function searchNominatim(query: string, signal?: AbortSignal): Promise<GeocodeHit[]> {

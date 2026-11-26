@@ -2,7 +2,7 @@ import { cuisineById } from '../data/cuisines'
 import { googlePriceLevel, yelpPriceLevel } from './priceRange'
 import { seedSourceRating } from './ratings'
 import { cacheTtlUntilEndOfUtcDay, readCache, utcDayKey, writeCache } from './storage'
-import type { CitySelection, CuisineId, Restaurant } from './types'
+import type { CitySelection, CuisineId, DietaryId, HealthyFocusId, Restaurant } from './types'
 
 export type ProviderCandidate = {
   source: 'google' | 'yelp'
@@ -20,6 +20,15 @@ export type ProviderCandidate = {
   priceLevel?: string | number | null
   url?: string | null
   matchedTerm: string
+}
+
+export type ProviderSources = { google: boolean; yelp: boolean }
+
+let lastSources: ProviderSources | null = null
+
+/** Which providers /api/discover searched on the latest call (null until one answers). */
+export function lastProviderSources(): ProviderSources | null {
+  return lastSources
 }
 
 type ProviderDiscoveryResponse = {
@@ -155,13 +164,45 @@ export const HEALTHY_DISCOVERY_TERM_GROUPS: string[][] = [
   ['grass fed steak', 'wild salmon', 'healthy bowls'],
 ]
 
+/** What each kind of healthy means as a Google / Yelp search phrase. */
+export const FOCUS_DISCOVERY_TERMS: Record<HealthyFocusId, string[]> = {
+  smoothie: ['smoothie bowl', 'acai bowl', 'juice bar'],
+  seafood: ['grilled salmon', 'poke bowl', 'wild caught salmon'],
+  steak: ['grass fed steak', 'grass fed burger', 'steakhouse'],
+  plant: ['salad bowl', 'vegan restaurant', 'organic salad'],
+  clean: ['organic restaurant', 'farm to table', 'seed oil free restaurant'],
+}
+
+/**
+ * Two /api/discover calls per healthy hunt (each is up to 3 Google + 3 Yelp searches), so the
+ * Google Places free tier lasts: the searcher's own words first (a brand, "acai bowl",
+ * "grass fed", "no seed oils"), then the healthy brands people mean. With nothing specific,
+ * the default brand + dish groups.
+ */
+export function healthyDiscoveryGroups(
+  opts: { focus?: HealthyFocusId[]; keyword?: string; dietary?: DietaryId[] } = {},
+): string[][] {
+  const specific: string[] = []
+  const keyword = opts.keyword?.trim()
+  if (keyword) specific.push(keyword)
+  if (opts.dietary?.includes('no_seed_oils')) specific.push('seed oil free restaurant')
+  if (opts.dietary?.includes('grass_fed')) specific.push('grass fed')
+  for (const focus of opts.focus ?? []) specific.push(...FOCUS_DISCOVERY_TERMS[focus])
+  const unique = specific.filter(
+    (term, index, all) => all.findIndex((other) => other.toLowerCase() === term.toLowerCase()) === index,
+  )
+  if (!unique.length) return HEALTHY_DISCOVERY_TERM_GROUPS
+  return [unique.slice(0, 3), HEALTHY_DISCOVERY_TERM_GROUPS[0]!]
+}
+
 export async function discoverHealthyCandidates(
   city: CitySelection,
   signal?: AbortSignal,
   extraTerms: string[] = [],
+  opts: { focus?: HealthyFocusId[]; keyword?: string; dietary?: DietaryId[] } = {},
 ): Promise<ProviderCandidate[]> {
   const batches = await Promise.all([
-    ...HEALTHY_DISCOVERY_TERM_GROUPS.map((terms) =>
+    ...healthyDiscoveryGroups(opts).map((terms) =>
       fetchProviderCandidates(city, terms, signal).catch(() => [] as ProviderCandidate[]),
     ),
     extraTerms.length ? fetchExtraCandidates(city, extraTerms, signal) : Promise.resolve([] as ProviderCandidate[]),
@@ -177,14 +218,17 @@ async function fetchProviderCandidates(
   if (!terms.length) return []
 
   const cacheKey = [
-    'providerDiscovery:v1',
+    'providerDiscovery:v2',
     utcDayKey(),
     city.center.lat.toFixed(3),
     city.center.lon.toFixed(3),
     terms.map((term) => term.toLowerCase()).sort().join('|'),
   ].join(':')
-  const cached = readCache<ProviderCandidate[]>(cacheKey)
-  if (cached?.length) return cached
+  const cached = readCache<{ places: ProviderCandidate[]; sources: ProviderSources }>(cacheKey)
+  if (cached?.places?.length) {
+    lastSources = cached.sources
+    return cached.places
+  }
 
   const params = new URLSearchParams({
     lat: String(city.center.lat),
@@ -200,7 +244,9 @@ async function fetchProviderCandidates(
 
   const data = (await response.json()) as ProviderDiscoveryResponse
   const places = data.places ?? []
-  if (places.length) writeCache(cacheKey, places, cacheTtlUntilEndOfUtcDay())
+  const sources = { google: Boolean(data.sources?.google), yelp: Boolean(data.sources?.yelp) }
+  lastSources = sources
+  if (places.length) writeCache(cacheKey, { places, sources }, cacheTtlUntilEndOfUtcDay())
   return places
 }
 

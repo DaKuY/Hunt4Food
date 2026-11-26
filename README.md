@@ -4,6 +4,31 @@ Hunt what’s good to eat nearby. Pick a place on the map, choose up to three cu
 
 **Live app:** https://hunt4food.andrewcamero.com (lodge-gated; sign in at https://andrewcamero.com)
 
+## Search (iPhone first)
+
+The big search box is the main way in. Type what you want in plain words, or tap a quick pick:
+
+- **"True Food Kitchen"**, **"smoothie bowl"**, **"salmon"**, **"grass fed burger no seed oils"** → the healthy hunt, with that focus
+- **"healthy food Coppell"** or just **"Coppell"** → a town typed without "in"/"near" is recognized (it must match a real town name, so "birria" stays a food)
+- **"Mexican near Coppell TX without seed oils"** → a regular cuisine search with the seed-oil filter
+- No food named → healthy picks where you are
+
+**Healthy first, then the next best.** Clean-food evidence (grass-fed, no seed oils, avocado oil, organic, wild-caught), known healthy brands (True Food Kitchen, Flower Child, Tropical Smoothie, Pure Green…), salmon, steak, smoothie and plant-forward spots lead. When fewer than ten turn up, the list is filled with clearly labeled **Next best** picks: healthy spots outside your exact choice, then whole-food-friendly kitchens (Mediterranean, poke, sushi, Vietnamese, Peruvian…). Pizza, burgers, wings, fried chicken, fast food, bars and dessert never appear. Healthy searches look at least ~5 miles around the town center.
+
+**Sources.** Every search combines OpenStreetMap with Google Places and Yelp (`/api/discover`, server keys) and, in healthy mode, review mentions from the ratings proxy. The results say which sources answered ("Searched OpenStreetMap · Google · Yelp"), and "Google not connected" means `GOOGLE_PLACES_API_KEY` is missing in Vercel. A healthy hunt makes two discovery calls: your own words first, then the healthy brands.
+
+**Maps.** Google Maps (Maps JavaScript API) when `VITE_GOOGLE_MAPS_API_KEY` is set: numbered pins in result order, brass pins for next-best picks, tap a pin for directions in Google Maps. Free up to 10,000 map loads a month ([pricing](https://developers.google.com/maps/billing-and-pricing/pricing)); Hunt4Food loads a map only on the area picker and the results. Without a key, or if Google refuses it, the OpenStreetMap map is used.
+
+### Google Maps setup (one-time)
+
+1. Google Cloud Console → the project with your Places key → **APIs & Services → Library → Maps JavaScript API → Enable**
+2. **Credentials → Create credentials → API key**. Restrict it: *Application restrictions* → Websites → `https://hunt4food.andrewcamero.com/*`; *API restrictions* → Maps JavaScript API
+3. **Map Management → Create map ID** (JavaScript, Vector). Copy the ID
+4. Vercel → Hunt4Food → Settings → Environment Variables: `VITE_GOOGLE_MAPS_API_KEY` and `VITE_GOOGLE_MAPS_MAP_ID` (Production + Preview), then redeploy
+5. Optional: Billing → Budgets & alerts → a $1 budget alert, so you hear about it long before any charge
+
+Google Places discovery with ratings is the Text Search Enterprise SKU: 1,000 free requests a month. Results are cached per city per day in the browser, so personal use stays within it.
+
 ## What it does
 
 1. **City** — type a name or zoom the map to a neighborhood
@@ -35,61 +60,46 @@ Access is through the andrewcamero.com lodge: you must be logged in (`ac_session
 
 ## Lodge
 
-Hunt4Food is a product behind the andrewcamero.com lodge. It does **not** host login, signup, or its own user database. JWT verification runs only on the server (`server/`, Vercel `middleware.ts`); `AUTH_SECRET` must never be prefixed with `VITE_` or `NEXT_PUBLIC_`.
-
-`ORIGIN=https://hunt4food.andrewcamero.com`
+Hunt4Food is a product behind the andrewcamero.com lodge (Base Camp). It does **not** host login, signup, or its own user database, and it follows the lodge's [product auth contract](https://github.com/DaKuY/andrewcamero.com-orchestrator/blob/main/docs/PRODUCT-AUTH-CONTRACT.md): Base Camp is the only verifier of `ac_session`.
 
 | | |
 | --- | --- |
 | Origin | https://hunt4food.andrewcamero.com |
 | Login | https://andrewcamero.com/login?next=https://hunt4food.andrewcamero.com |
-| Cookie | `ac_session` (HS256 JWT, production domain `.andrewcamero.com`) |
+| Cookie | `ac_session` (HttpOnly, set by Base Camp on `.andrewcamero.com`; never read in the browser) |
+| Session check | `server/session.ts` forwards the cookie to `GET https://andrewcamero.com/api/session` (answers cached 15 s; outages never cached) |
 | Access | Any logged-in lodge user (no Hunt4Food grant required) |
+| Base Camp down | `503` with `Retry-After: 5`; never a login redirect |
 | Catalog slug | `Hunt4Food` (not `food`) |
 | Vercel | **this** Vite project only — not the lodge project |
 
-Lodge catalog already has `Hunt4Food` (`origin` `https://hunt4food.andrewcamero.com`, repo `DaKuY/restaurant-finder`, `live: true`). Do not add a second `apps.ts` row and do not flip lodge live flags.
+The lodge catalog already has `Hunt4Food` (`live: true`, repo `DaKuY/Hunt4Food`). Do not add a second `apps.ts` row.
 
 ### Required env
 
-Copy `.env.example` to `.env` (never commit `.env`):
+Copy `.env.example` to `.env` (never commit `.env`). All values are non-secret:
 
 ```
-AUTH_SECRET=<same value as the lodge>
 COOKIE_DOMAIN=.andrewcamero.com
 LODGE_ORIGIN=https://andrewcamero.com
 APP_SLUG=Hunt4Food
 ```
 
-Production Vercel env is the same four names (server-only).
+**Do not add `AUTH_SECRET` to this Vercel project.** This app never verifies the cookie itself; if an older deployment still has the variable, delete it.
 
 ### Run against a local lodge
 
-Typical lodge on port 3000:
-
-```
-AUTH_SECRET=<same value as the local lodge>
-COOKIE_DOMAIN=
-LODGE_ORIGIN=http://localhost:3000
-APP_SLUG=Hunt4Food
-```
-
-`localhost` cookies are host-only and shared across ports, so a lodge session on `http://localhost:3000` is sent to `http://localhost:5173`. Then:
+Run Base Camp on port 3000, then set `LODGE_ORIGIN=http://localhost:3000` and `COOKIE_DOMAIN=` (empty). `localhost` cookies are host-only and shared across ports, so a lodge session on `http://localhost:3000` is sent to `http://localhost:5173`.
 
 ```bash
 npm install
 npm run dev
-```
-
-Visiting this app without `ac_session` redirects to the lodge login. A valid lodge session (member or admin) is enough to use the app; a Hunt4Food grant row is not required.
-
-```bash
 npm test
 npm run build
-npm run preview
+npm run preview   # also gated
 ```
 
-Preview is also gated. Node 22 LTS.
+Visiting this app without `ac_session` redirects to the lodge login. Node 22 LTS.
 
 ## Local development
 
@@ -98,7 +108,7 @@ npm install
 npm run dev
 ```
 
-Requires the Lodge env vars above. Without a valid lodge session the UI never loads.
+Requires a running lodge (see above). Without a valid lodge session the UI never loads.
 
 ## Limits (honest)
 

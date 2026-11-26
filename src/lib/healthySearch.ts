@@ -14,6 +14,7 @@ import {
   healthySignalScore,
   healthyCategoryReason,
   isHealthyMatch,
+  isIndulgentOnly,
   isPrimarilyFocus,
   isQuickService,
   matchesHealthyFocus,
@@ -282,6 +283,10 @@ export function pickHealthyLanes(
 ): RankedRestaurant[] {
   const exclude = excludeIds ? new Set(excludeIds) : new Set<string>()
   const avoid = prefs.avoid ?? []
+  // Re-ranking an already shown list: earlier next-best labels are decided again here.
+  ranked = ranked.map((place) =>
+    place.nextBest ? { ...place, nextBest: undefined, reasons: place.reasons.filter((r) => !r.startsWith('Next best')) } : place,
+  )
   const ordered = ranked
     .filter((place) => !exclude.has(place.id))
     .filter((place) => isHealthyMatch(place, place.signals ?? []))
@@ -330,7 +335,76 @@ export function pickHealthyLanes(
     if (picked.length >= limit) break
     picked.push(place)
   }
-  return picked
+  if (picked.length >= limit) return picked
+  return [...picked, ...nextBestPicks(ranked, limit - picked.length, new Set([...exclude, ...picked.map((p) => p.id)]), focus, prefs)]
+}
+
+/**
+ * Pizza, burgers, wings, fried chicken, hot dogs, buffets, bars and dessert never fill a
+ * healthy list, even as a next-best pick.
+ */
+const NEVER_NEXT_BEST =
+  /\b(pizza|pizzeria|burgers?|hamburger|fried[_ ]chicken|chicken[_ ]wings?|wings|hot[_ ]?dogs?|buffet|sports[_ ]bar|pub|bar|tavern|brewery|beer|donuts?|doughnuts?|fries|cajun|barbecue|bbq|chicken[_ ]tenders?|chicken[_ ]fingers?)\b/
+/** Menus that usually have a grilled protein, fish, vegetables or rice to order around. */
+const WHOLE_FOOD_FRIENDLY =
+  /\b(mediterranean|greek|lebanese|persian|turkish|middle[_ ]eastern|israeli|kebab|falafel|poke|sushi|japanese|vietnamese|pho|thai|korean|peruvian|indian|nepalese|ethiopian|seafood|fish|new[_ ]american|bistro|brunch|breakfast|mexican|latin|spanish|tapas|italian|french|hawaiian|asian|fusion|rotisserie|grill)\b/
+
+function nextBestReason(place: RankedRestaurant, healthyOutsideFocus: boolean): string {
+  if (healthyOutsideFocus) return 'Next best: a healthy pick, just not your exact choice'
+  const blob = `${place.cuisines.join(' ')} ${place.cuisineRaw ?? ''}`.toLowerCase()
+  const kind = WHOLE_FOOD_FRIENDLY.exec(blob)?.[1]?.replace(/_/g, ' ')
+  return kind
+    ? `Next best: ${kind} — order grilled protein and vegetables; ask what they cook with`
+    : 'Next best nearby — ask for grilled options and what oil they cook with'
+}
+
+/**
+ * When the healthy list comes up short, fill it with the next best options instead of
+ * leaving it nearly empty: healthy places outside the chosen focus first, then whole-food
+ * friendly restaurants, best rated first. Each is marked nextBest.
+ */
+function nextBestPicks(
+  ranked: RankedRestaurant[],
+  slots: number,
+  exclude: Set<string>,
+  focus: HealthyFocusId[],
+  prefs: HealthyPrefs,
+): RankedRestaurant[] {
+  if (slots <= 0) return []
+  const avoid = prefs.avoid ?? []
+  const candidates = ranked.filter(
+    (place) =>
+      !exclude.has(place.id) &&
+      !avoid.some((f) => isPrimarilyFocus(place, f)) &&
+      !isIndulgentOnly(place),
+  )
+  const outsideFocus = focus.length ? candidates.filter((place) => isHealthyMatch(place, place.signals ?? [])) : []
+  const outsideIds = new Set(outsideFocus.map((place) => place.id))
+  const friendly = candidates
+    .filter((place) => !outsideIds.has(place.id) && !isHealthyMatch(place, place.signals ?? []))
+    .filter((place) => place.amenity !== 'fast_food' && place.amenity !== 'ice_cream')
+    .filter((place) => !NEVER_NEXT_BEST.test(`${place.name} ${place.cuisines.join(' ')} ${place.cuisineRaw ?? ''}`.toLowerCase()))
+    .sort((a, b) => {
+      const blobA = `${a.cuisines.join(' ')} ${a.cuisineRaw ?? ''}`.toLowerCase()
+      const blobB = `${b.cuisines.join(' ')} ${b.cuisineRaw ?? ''}`.toLowerCase()
+      const friendlyDiff = Number(WHOLE_FOOD_FRIENDLY.test(blobB)) - Number(WHOLE_FOOD_FRIENDLY.test(blobA))
+      return friendlyDiff || b.score - a.score
+    })
+  const chainsUsed = new Set<string>()
+  const out: RankedRestaurant[] = []
+  for (const place of [...outsideFocus, ...friendly]) {
+    if (out.length >= slots) break
+    const chain = matchKnownChain(place)?.name
+    if (chain && chainsUsed.has(chain)) continue
+    if (chain) chainsUsed.add(chain)
+    const reason = nextBestReason(place, outsideIds.has(place.id))
+    out.push({
+      ...place,
+      nextBest: true,
+      reasons: [reason, ...place.reasons.filter((r) => !r.startsWith('Next best'))].slice(0, 4),
+    })
+  }
+  return out
 }
 
 /** 0: counter-service food, 1: smoothie/juice-only counter, 2: sit-down. */
@@ -562,7 +636,8 @@ export async function runHealthyHunt(opts: {
     opts.city,
     opts.selectedCuisines,
     opts.dietary,
-    [opts.keyword, ...(opts.extraDiscoveryTerms ?? [])].filter(Boolean).join(' | '),
+    // Focus changes which Google / Yelp searches run, so it is part of the cached hunt.
+    [opts.keyword, ...(opts.extraDiscoveryTerms ?? []), ...focus.map((f) => `focus:${f}`)].filter(Boolean).join(' | '),
     opts.taste,
   )
   const cached = readCache<{ displayed: RankedRestaurant[]; pool: RankedRestaurant[] }>(key)
@@ -597,7 +672,11 @@ export async function runHealthyHunt(opts: {
   if (remaining() > 1500 && !opts.signal?.aborted) {
     // Name searches (True Food Kitchen, Tropical Smoothie Cafe, grass-fed steak…)
     // run alongside the review-mining proxy; either can fail independently.
-    const providerPromise = discoverHealthyCandidates(opts.city, opts.signal, opts.extraDiscoveryTerms).catch(
+    const providerPromise = discoverHealthyCandidates(opts.city, opts.signal, opts.extraDiscoveryTerms, {
+      focus,
+      keyword: opts.keyword,
+      dietary: opts.dietary,
+    }).catch(
       () => [] as ProviderCandidate[],
     )
     try {

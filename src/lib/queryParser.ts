@@ -1,4 +1,5 @@
 import { CUISINES } from '../data/cuisines'
+import { KNOWN_HEALTHY_CHAINS } from './healthySignals'
 import type { PriceLevel } from './priceRange'
 import type { CuisineId, DietaryId, HealthyFocusId } from './types'
 
@@ -28,7 +29,23 @@ export type ParsedQuery = {
   lunch: boolean
   /** Words left over when nothing else matched, e.g. "birria". */
   keyword: string
+  /** A healthy brand named outright ("True Food Kitchen"); also set as the keyword. */
+  brand: string | null
+  /**
+   * Trailing words that may be a place typed without "in"/"near" ("healthy food Coppell",
+   * "acai bowl plano"). The caller geocodes it; if it is not a town, it goes back into the keyword.
+   */
+  placeGuess: string | null
 }
+
+/** Mentions that mean "the healthy hunt" even without the word healthy. */
+const HEALTHY_TRIGGERS =
+  /\b(?:smoothies?|acai|açaí|juices?|juice bars?|salmon|poke|grass[-\s]?fed|pasture[-\s]?raised|seed[-\s]?oils?|avocado oil|tallow|organic|clean|salads?|wild[-\s]?caught|farm[-\s]?to[-\s]?table|whole ?30|paleo|keto|anti[-\s]?inflammatory|nutritious|protein bowls?|grain bowls?|nourish)\b/
+/** Foods that the healthy hunt covers as a focus rather than as a separate cuisine filter. */
+const HEALTHY_FOODS = new Set<CuisineId>(['steak', 'salmon', 'smoothie', 'salad', 'seafood', 'vegan', 'bowl'])
+
+/** Words that end a trailing place guess: numbers, units and question words are never a town. */
+const NOT_A_PLACE = /^(?:\d+|mi|miles?|km|now|today|tonight|tomorrow|what|where|who|how|please|thanks|ok|okay)$/
 
 const LOCATION_STOP =
   '(?:that|which|who|where|with|without|w/o|and|but|under|below|less|within|open|serving|for|doesn\'?t|does not|don\'?t|do not|no|not|using|cooked|cheap|budget|fancy|upscale)'
@@ -107,6 +124,18 @@ export function parseSearchQuery(raw: string): ParsedQuery {
   // "Coppell, TX" → "coppell tx" so the place survives punctuation-based stops.
   let text = raw.toLowerCase().replace(/[’']/g, "'").replace(/,\s*([a-z]{2})\b/g, ' $1').replace(/\s+/g, ' ').trim()
 
+  // Healthy brands first, so "True Food Kitchen" keeps "food" and "kitchen".
+  let brand: string | null = null
+  let brandLane: string | null = null
+  for (const chain of KNOWN_HEALTHY_CHAINS) {
+    const alias = [chain.name.toLowerCase(), ...chain.aliases].sort((a, b) => b.length - a.length).find((a) => matchesWord(text, a))
+    if (!alias) continue
+    brand = chain.name
+    brandLane = chain.lane
+    text = text.replace(new RegExp(`\\b${escapeRegExp(alias)}(?:'?s)?\\b(?:\\s+(?:cafe|café|kitchen|juice bar))?`), ' ').replace(/\s+/g, ' ').trim()
+    break
+  }
+
   let location: string | null = null
   let nearMe = /\bnear me\b|\bnearby\b|\baround me\b|\bclose to me\b|\bclose by\b/.test(text)
   const locationMatch = text.match(LOCATION)
@@ -139,6 +168,22 @@ export function parseSearchQuery(raw: string): ParsedQuery {
     }
   }
 
+  // "healthy food Coppell", "acai bowl plano", "Coppell": trailing words that are not food or filler.
+  let placeGuess: string | null = null
+  if (!location && !nearMe) {
+    const words = text.replace(/[^a-z0-9\s'-]/g, ' ').split(/\s+/).filter(Boolean)
+    const guess: string[] = []
+    while (words.length && guess.length < 3) {
+      const word = words[words.length - 1]!
+      if (FILLER.has(word) || isFoodWord(word) || NOT_A_PLACE.test(word)) break
+      guess.unshift(words.pop()!)
+    }
+    if (guess.length) {
+      placeGuess = guess.join(' ')
+      text = words.join(' ')
+    }
+  }
+
   // "no smoothies" first, and cut it out so "smoothies" isn't also read as a focus.
   const healthyAvoid: HealthyFocusId[] = []
   for (const rule of AVOID_WORDS) {
@@ -151,10 +196,7 @@ export function parseSearchQuery(raw: string): ParsedQuery {
   const quick = /\b(?:fast|quick|express|grab[- ]and[- ]go|on the go|in a hurry|fast[- ]casual|counter service)\b/.test(text)
 
   const dietary = DIETARY_RULES.filter((rule) => rule.pattern.test(text)).map((rule) => rule.id)
-  const healthy = /\bhealthy\b|\bhealthier\b|clean eating|clean food/.test(text)
-  const healthyFocus = healthy
-    ? FOCUS_RULES.filter((rule) => rule.pattern.test(text) && !healthyAvoid.includes(rule.id)).map((rule) => rule.id)
-    : []
+  const explicitHealthy = /\bhealthy\b|\bhealthier\b|clean eating|clean food/.test(text)
 
   // Cuisine labels first ("Mexican"), then their keywords ("taqueria" → Mexican/Tacos).
   const cuisines: CuisineId[] = []
@@ -171,8 +213,18 @@ export function parseSearchQuery(raw: string): ParsedQuery {
       if (!overlaps) cuisines.push(cuisine.id)
     }
   }
+  // Smoothies, salmon, grass-fed, no seed oils, a healthy brand…: the healthy hunt, unless a
+  // regular cuisine was named ("Mexican without seed oils" stays a Mexican search).
+  const healthy =
+    explicitHealthy ||
+    Boolean(brand) ||
+    (HEALTHY_TRIGGERS.test(text) && cuisines.every((id) => HEALTHY_FOODS.has(id)))
+  const healthyFocus: HealthyFocusId[] = healthy
+    ? FOCUS_RULES.filter((rule) => rule.pattern.test(text) && !healthyAvoid.includes(rule.id)).map((rule) => rule.id)
+    : []
+  if (brandLane === 'smoothie' && !healthyFocus.includes('smoothie')) healthyFocus.push('smoothie')
   // In healthy mode, foods like steak or smoothies are a focus, not a separate cuisine filter.
-  const foodCuisines = healthy ? cuisines.filter((id) => !['steak', 'salmon', 'smoothie', 'salad', 'seafood', 'vegan'].includes(id)) : cuisines
+  const foodCuisines = healthy ? cuisines.filter((id) => !HEALTHY_FOODS.has(id)) : cuisines
 
   let maxMiles: number | null = null
   const within = text.match(/within (\d+(?:\.\d+)?) ?(?:mi|miles?)\b/) ?? text.match(/(\d+(?:\.\d+)?) ?(?:mi|miles?) (?:away|radius)/)
@@ -192,8 +244,8 @@ export function parseSearchQuery(raw: string): ParsedQuery {
   const lunchSpecial = /\blunch(?:time)?\s+(?:specials?|deals?|combos?|menu|prix[-\s]?fixe|plates?)\b|\b(?:cheap|business)\s+lunch\b/.test(text)
   const lunch = lunchSpecial || /\blunch\b/.test(text)
 
-  let keyword = ''
-  if (!foodCuisines.length && !healthy) {
+  let keyword = brand ?? ''
+  if (!brand && !foodCuisines.length && !healthy) {
     keyword = text
       .replace(/[^a-z0-9\s-]/g, ' ')
       .split(/\s+/)
@@ -217,7 +269,16 @@ export function parseSearchQuery(raw: string): ParsedQuery {
     lunchSpecial,
     lunch,
     keyword,
+    brand,
+    placeGuess,
   }
+}
+
+/** Put an unresolved place guess back where it came from: the keyword ("birria", not a town). */
+export function withoutPlaceGuess(parsed: ParsedQuery): ParsedQuery {
+  if (!parsed.placeGuess) return parsed
+  const keyword = parsed.brand || parsed.healthy || parsed.cuisines.length ? parsed.keyword : [parsed.keyword, parsed.placeGuess].filter(Boolean).join(' ')
+  return { ...parsed, keyword, placeGuess: null }
 }
 
 /** Short human summary of what was understood, for the confirmation line. */
@@ -225,6 +286,14 @@ export function describeParsedQuery(parsed: ParsedQuery, cuisineLabel: (id: Cuis
   const parts: string[] = []
   if (parsed.healthy) parts.push(parsed.quick ? 'Healthy, quick' : 'Healthy')
   else if (parsed.quick) parts.push('Quick')
+  const FOCUS_LABELS: Record<HealthyFocusId, string> = {
+    seafood: 'salmon & seafood',
+    smoothie: 'smoothies & bowls',
+    steak: 'steak',
+    plant: 'plant-forward',
+    clean: 'clean kitchens',
+  }
+  if (!parsed.brand) parts.push(...(parsed.healthyFocus ?? []).map((id) => FOCUS_LABELS[id]))
   parts.push(...parsed.cuisines.map(cuisineLabel))
   if (parsed.keyword) parts.push(`“${parsed.keyword}”`)
   if (parsed.location) parts.push(`near ${parsed.location.replace(/\b([a-z])/g, (c) => c.toUpperCase()).replace(/\b([A-Z][a-z])$/, (s) => s.toUpperCase())}`)

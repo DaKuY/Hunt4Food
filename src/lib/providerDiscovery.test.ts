@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { buildDiscoveryTerms, mergeProviderCandidates, type ProviderCandidate } from './providerDiscovery'
+import {
+  buildDiscoveryTerms,
+  HEALTHY_DISCOVERY_TERM_GROUPS,
+  healthyDiscoveryGroups,
+  mergeProviderCandidates,
+  type ProviderCandidate,
+} from './providerDiscovery'
 import type { Restaurant } from './types'
 
 function osm(overrides: Partial<Restaurant> = {}): Restaurant {
@@ -28,6 +34,23 @@ function provider(overrides: Partial<ProviderCandidate> = {}): ProviderCandidate
     ...overrides,
   }
 }
+
+describe('healthyDiscoveryGroups', () => {
+  it('searches Google and Yelp for what was typed, then the healthy brands', () => {
+    expect(healthyDiscoveryGroups()).toEqual(HEALTHY_DISCOVERY_TERM_GROUPS)
+    expect(healthyDiscoveryGroups({ focus: ['smoothie'] })).toEqual([
+      ['smoothie bowl', 'acai bowl', 'juice bar'],
+      HEALTHY_DISCOVERY_TERM_GROUPS[0],
+    ])
+    expect(healthyDiscoveryGroups({ keyword: 'True Food Kitchen', dietary: ['no_seed_oils'], focus: ['seafood'] })[0]).toEqual([
+      'True Food Kitchen',
+      'seed oil free restaurant',
+      'grilled salmon',
+    ])
+    // Always two provider calls, so the Google free tier lasts.
+    expect(healthyDiscoveryGroups({ focus: ['steak', 'plant'], dietary: ['grass_fed'] })).toHaveLength(2)
+  })
+})
 
 describe('buildDiscoveryTerms', () => {
   it('prefers an explicit keyword and keeps unique cuisine terms', () => {

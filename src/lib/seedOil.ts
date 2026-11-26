@@ -11,7 +11,8 @@ export type SeedOilInfo = {
   error?: string
 }
 
-const CACHE_VERSION = 'v2'
+// v3: drop cached grades that belonged to a different chain (fuzzy search matches).
+const CACHE_VERSION = 'v3'
 const API_BASE = 'https://seedoiltracker.com/ai'
 const ATTRIBUTION = 'https://seedoiltracker.com'
 
@@ -26,6 +27,36 @@ function normalizeChainQuery(name: string): string {
     .replace(/\s*\([^)]*\)/g, '')
     .replace(/\s+#\d+.*/, '')
     .trim()
+}
+
+function compact(value: string): string {
+  return value.toLowerCase().replace(/^the\s+/, '').replace(/&/g, 'and').replace(/[^a-z0-9]/g, '')
+}
+
+function tokens(value: string): string[] {
+  return value
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .split(/[^a-z0-9]+/)
+    .filter((token) => token.length >= 2 && token !== 'the')
+}
+
+/**
+ * Seed Oil Tracker's search is fuzzy: "Sushi Sakana" comes back as "Kura Sushi". A grade
+ * belongs to a chain, so only keep it when the chain really is this restaurant:
+ * the same name ("Chick-fil-A #123"), a name that starts with the chain
+ * ("Chipotle Mexican Grill"), or every word of the chain in the name ("Kura Revolving Sushi Bar").
+ */
+export function chainMatchesName(chain: string, placeName: string): boolean {
+  const name = normalizeChainQuery(placeName)
+  const a = compact(chain)
+  const b = compact(name)
+  if (!a || !b) return false
+  if (a === b) return true
+  if (Math.min(a.length, b.length) >= 4 && (a.startsWith(b) || b.startsWith(a))) return true
+  const chainTokens = tokens(chain)
+  const nameTokens = new Set(tokens(name))
+  return chainTokens.length >= 2 && chainTokens.every((token) => nameTokens.has(token))
 }
 
 function gradeScore(grade: string | null): number {
@@ -79,7 +110,7 @@ async function fetchSearch(name: string, signal?: AbortSignal): Promise<SeedOilI
   const res = await fetch(`${API_BASE}/search?q=${q}&country=us`, { signal })
   if (!res.ok) throw new Error(`Seed Oil Tracker ${res.status}`)
   const data = (await res.json()) as SearchResponse
-  const hit = data.matches?.[0]
+  const hit = data.matches?.find((match) => match.chain && chainMatchesName(match.chain, name))
   if (!hit) return emptyInfo()
   return {
     grade: hit.grade ?? null,

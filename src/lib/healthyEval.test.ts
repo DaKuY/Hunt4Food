@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { runHealthyHunt, type HealthyPrefs } from './healthySearch'
+import { pickHealthyLanes, runHealthyHunt, type HealthyPrefs } from './healthySearch'
 import { emptyTaste } from './taste'
 import type { CitySelection, HealthyFocusId, Restaurant } from './types'
 
@@ -65,21 +65,42 @@ describe('healthy search on a realistic neighborhood', () => {
     for (const name of NOT_HEALTHY) expect(top).not.toContain(name)
   })
 
-  it('shows fewer places instead of padding with pizza, bars, desserts or coffee', async () => {
+  it('fills a short healthy list with labeled next-best picks, never pizza, bars, desserts or coffee', async () => {
     const drop = new Set(['True Food Kitchen', 'Tropical Smoothie Cafe', 'Pure Green', 'CAVA', 'Sweetgreen', 'Smoothie King', 'Organic Harvest Kitchen', 'Local Chophouse', 'Salt Water Seafood', 'Juice Land'])
     const sparse = POOL.filter((r) => !drop.has(r.name)).map((r) => ({ ...r, id: `${r.id}-sparse` }))
     const { displayed } = await hunt(sparse, 'Sparse')
-    expect(names(displayed).sort()).toEqual(['Green Leaf Vegan Cafe', 'Olive Mediterranean Grill', 'Poke Paradise', 'Sushi Zen'])
+    const strict = displayed.filter((r) => !r.nextBest)
+    const nextBest = displayed.filter((r) => r.nextBest)
+    expect(names(strict).sort()).toEqual(['Green Leaf Vegan Cafe', 'Olive Mediterranean Grill', 'Poke Paradise', 'Sushi Zen'])
+    // Healthy picks always come first; the next best follow, each with a "Next best" reason.
+    expect(displayed.slice(0, strict.length).every((r) => !r.nextBest)).toBe(true)
+    expect(nextBest.length).toBeGreaterThan(0)
+    expect(names(nextBest)).toEqual(expect.arrayContaining(['Thai Orchid', 'Bella Italia']))
+    for (const row of nextBest) expect(row.reasons[0]).toMatch(/^Next best/)
+    const neverNextBest = ['Starbucks', "Dunkin'", 'Baskin-Robbins', 'Shipley Do-Nuts', 'Krispy Kreme', 'Nothing Bundt Cakes', 'Bubble Tea Station', 'Pizza Palace', "Buffalo Joe's Bar & Grill", 'Texas BBQ Pit', 'Wingstop']
+    for (const name of neverNextBest) expect(names(displayed)).not.toContain(name)
   })
 
-  it('narrows to the chosen kind of healthy', async () => {
-    expect(names((await hunt(POOL, 'Steak', ['steak'])).displayed)).toEqual(['Local Chophouse'])
-    const smoothies = names((await hunt(POOL, 'Smoothies', ['smoothie'])).displayed)
-    expect(smoothies).toEqual(expect.arrayContaining(['Tropical Smoothie Cafe', 'Pure Green', 'Smoothie King', 'Juice Land']))
-    expect(smoothies).not.toContain('Local Chophouse')
-    const seafoodOrPlant = names((await hunt(POOL, 'Mix', ['seafood', 'plant'])).displayed)
-    expect(seafoodOrPlant).toEqual(expect.arrayContaining(['Poke Paradise', 'Sushi Zen', 'Green Leaf Vegan Cafe']))
-    expect(seafoodOrPlant).not.toContain('Tropical Smoothie Cafe')
+  it('narrows to the chosen kind of healthy, then offers other healthy spots as next best', async () => {
+    const steak = (await hunt(POOL, 'Steak', ['steak'])).displayed
+    expect(names(steak.filter((r) => !r.nextBest))).toEqual(['Local Chophouse'])
+    expect(steak[0]!.name).toBe('Local Chophouse')
+    // Next best for a steak search are other healthy places (True Food Kitchen…), not pizza.
+    expect(names(steak.filter((r) => r.nextBest))).toEqual(expect.arrayContaining(['True Food Kitchen']))
+    for (const name of NOT_HEALTHY.filter((n) => !['Bella Italia', 'Thai Orchid', 'Cheesecake Factory'].includes(n))) {
+      expect(names(steak)).not.toContain(name)
+    }
+    // Re-ranking the shown list (ratings and seed-oil grades arrive later) keeps next best last.
+    const reranked = pickHealthyLanes([...steak].reverse(), steak.length, undefined, ['steak'])
+    expect(reranked[0]!.name).toBe('Local Chophouse')
+    expect(reranked[0]!.nextBest).toBeUndefined()
+    expect(reranked.slice(1).every((r) => r.nextBest)).toBe(true)
+    const smoothies = (await hunt(POOL, 'Smoothies', ['smoothie'])).displayed
+    expect(names(smoothies)).toEqual(expect.arrayContaining(['Tropical Smoothie Cafe', 'Pure Green', 'Smoothie King', 'Juice Land']))
+    expect(names(smoothies.filter((r) => !r.nextBest))).not.toContain('Local Chophouse')
+    const seafoodOrPlant = (await hunt(POOL, 'Mix', ['seafood', 'plant'])).displayed
+    expect(names(seafoodOrPlant)).toEqual(expect.arrayContaining(['Poke Paradise', 'Sushi Zen', 'Green Leaf Vegan Cafe']))
+    expect(names(seafoodOrPlant.filter((r) => !r.nextBest))).not.toContain('Tropical Smoothie Cafe')
   })
 
   it('explains each pick with a specific reason', async () => {
