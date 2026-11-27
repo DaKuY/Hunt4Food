@@ -64,7 +64,10 @@ export function cityCuisineFallbackLinks(
   }
 }
 
+/** A link to this search. A friend opens the same place, not their own location ("here"). */
 export function buildSearchShareUrl(params: URLSearchParams): string {
-  const qs = params.toString()
+  const shared = new URLSearchParams(params)
+  shared.delete('here')
+  const qs = shared.toString()
   return `${window.location.origin}${window.location.pathname}#/${qs ? `?${qs}` : ''}`
 }

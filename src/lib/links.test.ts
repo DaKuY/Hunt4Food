@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { menuOrWebsiteUrl, safeExternalUrl } from './links'
+import { describe, expect, it, vi } from 'vitest'
+import { buildSearchShareUrl, menuOrWebsiteUrl, safeExternalUrl } from './links'
 import { BUILTIN_RATINGS_PROXY_URL, isAllowedProxyUrl } from './ratingsProxy'
 import type { Restaurant } from './types'
 
@@ -50,5 +50,20 @@ describe('isAllowedProxyUrl', () => {
     expect(isAllowedProxyUrl('https://script.google.com.evil.example/macros/s/x/exec')).toBe(false)
     expect(isAllowedProxyUrl('http://script.google.com/macros/s/x/exec')).toBe(false)
     expect(isAllowedProxyUrl('https://script.google.com/macros/s/x/exec?callback=alert')).toBe(false)
+  })
+})
+
+describe('buildSearchShareUrl', () => {
+  it('shares the place, not the sharer’s "near me" flag', () => {
+    vi.stubGlobal('window', { location: { origin: 'https://food.example', pathname: '/' } })
+    const params = new URLSearchParams('city=Coppell&lat=32.95&lon=-97.01&here=1&cuisines=healthy')
+    const url = buildSearchShareUrl(params)
+    vi.unstubAllGlobals()
+    expect(url.startsWith('https://food.example/#/?')).toBe(true)
+    expect(url).toContain('city=Coppell')
+    expect(url).toContain('cuisines=healthy')
+    expect(url).not.toContain('here=')
+    // The page's own params are untouched.
+    expect(params.get('here')).toBe('1')
   })
 })

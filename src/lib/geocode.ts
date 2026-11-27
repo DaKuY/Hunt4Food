@@ -1,4 +1,5 @@
 import type { CitySelection } from './types'
+import { townLabel } from './searchArea'
 
 let lastGeocodeAt = 0
 
@@ -154,6 +155,7 @@ export async function searchCities(query: string, signal?: AbortSignal): Promise
   return searchNominatim(q, signal)
 }
 
+/** The town a point is in ("Coppell, Texas, United States"), or the coordinates. */
 export async function reverseGeocode(lat: number, lon: number, signal?: AbortSignal): Promise<string> {
   await throttleGeocode()
   try {
@@ -162,13 +164,10 @@ export async function reverseGeocode(lat: number, lon: number, signal?: AbortSig
     url.searchParams.set('lon', String(lon))
     const res = await fetch(url.toString(), { signal })
     if (res.ok) {
-      const data = (await res.json()) as {
-        features?: Array<{ properties: { name?: string; city?: string; state?: string; country?: string } }>
-      }
+      const data = (await res.json()) as { features?: Array<{ properties: Parameters<typeof townLabel>[0] }> }
       const p = data.features?.[0]?.properties
-      if (p) {
-        return [p.name, p.city, p.state, p.country].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(', ')
-      }
+      const label = p ? townLabel(p) : null
+      if (label) return label
     }
   } catch {
     // fall through

@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import type { AreaKind } from '../lib/searchArea'
 
 type Props = {
   onAsk: (text: string) => void
@@ -9,20 +10,32 @@ type Props = {
   variant?: 'hero' | 'compact'
   /** Where an unplaced search runs ("Coppell"); null means the phone's location. */
   areaLabel?: string | null
+  /** here: the phone's location; chosen: picked or typed; saved: the last area, location unavailable. */
+  areaKind?: AreaKind | null
+  /** The phone's location is being found. */
+  locating?: boolean
   /** Open the map / city picker. */
   onChangeArea?: () => void
+  /** Move the search to the phone's location. */
+  onUseLocation?: () => void
 }
 
-/** Healthy first: one tap runs the search where you are. */
-function quickPicks(areaLabel: string | null | undefined) {
-  return [
-    { label: areaLabel ? `Healthy near ${areaLabel}` : 'Healthy near me', query: 'healthy' },
+/** Healthy first. "Healthy near me" always searches where the phone is now. */
+const QUICK_PICKS = [
+  { label: 'Healthy near me', query: 'healthy near me' },
     { label: 'True Food Kitchen', query: 'True Food Kitchen' },
     { label: 'Smoothies & açaí', query: 'smoothie and acai bowls' },
     { label: 'Wild salmon', query: 'salmon' },
     { label: 'Grass-fed', query: 'grass fed steak' },
     { label: 'No seed oils', query: 'healthy no seed oils' },
-  ]
+]
+
+function areaText(areaLabel: string | null, areaKind: AreaKind | null, locating: boolean): string {
+  if (locating) return 'Finding your location…'
+  if (!areaLabel) return 'Near your location'
+  if (areaKind === 'here') return `Near you in ${areaLabel}`
+  if (areaKind === 'saved') return `Near ${areaLabel} (last area)`
+  return `Near ${areaLabel}`
 }
 
 function SearchIcon() {
@@ -47,7 +60,17 @@ function PinIcon() {
  * The main way to search: type what you want in plain words ("salmon bowl near Coppell",
  * "True Food Kitchen", "grass-fed burger no seed oils") or tap a healthy quick pick.
  */
-export function AskBar({ onAsk, busy, message, variant = 'compact', areaLabel = null, onChangeArea }: Props) {
+export function AskBar({
+  onAsk,
+  busy,
+  message,
+  variant = 'compact',
+  areaLabel = null,
+  areaKind = null,
+  locating = false,
+  onChangeArea,
+  onUseLocation,
+}: Props) {
   const [text, setText] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const hero = variant === 'hero'
@@ -118,9 +141,14 @@ export function AskBar({ onAsk, busy, message, variant = 'compact', areaLabel = 
           {busy ? 'Searching…' : 'Search'}
         </button>
       </div>
-      <p className="ask-area">
+      <p className="ask-area" aria-live="polite">
         <PinIcon />
-        <span>{areaLabel ? `Near ${areaLabel}` : 'Near your location'}</span>
+        <span>{areaText(areaLabel, areaKind, locating)}</span>
+        {onUseLocation && areaLabel && areaKind !== 'here' && !locating ? (
+          <button type="button" className="link-button" disabled={busy} onClick={onUseLocation}>
+            Use my location
+          </button>
+        ) : null}
         {onChangeArea ? (
           <button type="button" className="link-button" onClick={onChangeArea}>
             Choose an area
@@ -133,7 +161,7 @@ export function AskBar({ onAsk, busy, message, variant = 'compact', areaLabel = 
         </p>
       ) : null}
       <div className="ask-picks" aria-label="Quick healthy searches">
-        {quickPicks(areaLabel).map((pick) => (
+        {QUICK_PICKS.map((pick) => (
           <button
             key={pick.label}
             type="button"
