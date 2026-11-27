@@ -325,7 +325,7 @@ export function ResultsStep({
         <p className="lede">
           {healthyMode ? (
             <>
-              Live search for True Food Kitchen–style restaurants, smoothie spots like Tropical Smoothie and Pure Green, and grass-fed steak, salmon, or chicken
+              Live search for True Food Kitchen–style restaurants, clean juice and smoothie bars like Pure Green, and grass-fed steak, wild salmon, or chicken
               {keyword ? (
                 <>
                   {' '}

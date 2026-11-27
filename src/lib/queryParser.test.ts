@@ -69,7 +69,7 @@ describe('parseSearchQuery lunch', () => {
   it('understands the healthy + no seed oils + lunch special request', () => {
     const q = parseSearchQuery('Healthy food no seed oils with a lunch special')
     expect(q).toMatchObject({ healthy: true, dietary: ['no_seed_oils'], lunchSpecial: true, lunch: true, keyword: '', cuisines: [] })
-    expect(describeParsedQuery(q, (id) => cuisineById(id).label)).toEqual(['Healthy', 'no seed oils', 'lunch special'])
+    expect(describeParsedQuery(q, (id) => cuisineById(id).label)).toEqual(['Healthy & clean', 'no seed oils', 'lunch special'])
   })
 
   it('treats deals and combos as specials, and plain lunch as lunch hours only', () => {
@@ -108,7 +108,7 @@ describe('parseSearchQuery lunch', () => {
     expect(parseSearchQuery('healthy salmon, no steakhouses')).toMatchObject({ healthyAvoid: ['steak'], healthyFocus: ['seafood'] })
     expect(parseSearchQuery('healthy smoothies near Frisco')).toMatchObject({ healthyAvoid: [], healthyFocus: ['smoothie'] })
     expect(parseSearchQuery('healthy breakfast')).toMatchObject({ quick: false })
-    expect(describeParsedQuery(noSmoothies, (id) => id)).toEqual(['Healthy', 'near you', 'no smoothies'])
+    expect(describeParsedQuery(noSmoothies, (id) => id)).toEqual(['Healthy & clean', 'near you', 'no smoothies'])
   })
 
   it('keeps a healthy brand whole and runs the healthy hunt for it', () => {
@@ -142,7 +142,7 @@ describe('parseSearchQuery lunch', () => {
   })
 
   it('names the kind of healthy in the confirmation line', () => {
-    expect(describeParsedQuery(parseSearchQuery('healthy salmon near Coppell TX'), (id) => id)).toEqual(['Healthy', 'salmon & seafood', 'near Coppell TX'])
-    expect(describeParsedQuery(parseSearchQuery('true food kitchen'), (id) => id)).toEqual(['Healthy', '“True Food Kitchen”'])
+    expect(describeParsedQuery(parseSearchQuery('healthy salmon near Coppell TX'), (id) => id)).toEqual(['Healthy & clean', 'salmon & seafood', 'near Coppell TX'])
+    expect(describeParsedQuery(parseSearchQuery('true food kitchen'), (id) => id)).toEqual(['Healthy & clean', '“True Food Kitchen”'])
   })
 })

@@ -284,7 +284,7 @@ export function withoutPlaceGuess(parsed: ParsedQuery): ParsedQuery {
 /** Short human summary of what was understood, for the confirmation line. */
 export function describeParsedQuery(parsed: ParsedQuery, cuisineLabel: (id: CuisineId) => string): string[] {
   const parts: string[] = []
-  if (parsed.healthy) parts.push(parsed.quick ? 'Healthy, quick' : 'Healthy')
+  if (parsed.healthy) parts.push(parsed.quick ? 'Healthy & clean, quick' : 'Healthy & clean')
   else if (parsed.quick) parts.push('Quick')
   const FOCUS_LABELS: Record<HealthyFocusId, string> = {
     seafood: 'salmon & seafood',

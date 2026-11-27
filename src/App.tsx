@@ -16,7 +16,7 @@ import { usePlaceRatings } from './hooks/usePlaceRatings'
 import { usePlaceSeedOil } from './hooks/usePlaceSeedOil'
 import { buildSearchShareUrl } from './lib/links'
 import { coordsToCitySelection, findTown, searchCities, type GeocodeHit } from './lib/geocode'
-import { describeParsedQuery, parseSearchQuery, withoutPlaceGuess } from './lib/queryParser'
+import { describeParsedQuery, parseSearchQuery, withoutPlaceGuess, type ParsedQuery } from './lib/queryParser'
 import { lunchVerdict } from './lib/lunch'
 import { applyRequirements } from './lib/seedOilStatus'
 import { ensureCacheGeneration, pruneExpiredCache } from './lib/storage'
@@ -45,7 +45,6 @@ import {
   setDietaryPrefs,
   skipPlace,
   toggleShortlist,
-  type RecentCity,
   type ShortlistItem,
 } from './lib/taste'
 import { locationProblem, needsNewFix, stillInArea, wantsPhoneLocation, type AreaKind, type PhoneFix } from './lib/searchArea'
@@ -169,32 +168,24 @@ type SearchStart = {
   step: 'city' | 'cuisine' | 'results'
   city: CitySelection | null
   kind: AreaKind | null
-  /** Find the phone's location as the page opens. */
+  /** Find the phone's location as the page opens, then run the default healthy search. */
   locate: boolean
-  /** A reopened "near me" search: it runs once the phone's location is known. */
+  /** A reopened "near me" search: it re-runs once the phone's location is known. */
   waitForHere: boolean
-  /** The last area, opened only when this browser can't share a location. */
-  recent: RecentCity | null
 }
 
 /**
- * How a visit starts. A new visit finds where the phone is; the last area is only a fallback.
- * A link to a chosen place opens there, and a reopened "near me" search re-runs where the phone is now.
+ * How a visit starts. A new visit finds where the phone is and runs the healthy, clean search
+ * there (the last area is only a fallback). A link to a chosen place opens there, and a
+ * reopened "near me" search re-runs where the phone is now.
  */
 function searchStart(restored: CitySelection | null, params: URLSearchParams, cuisines: CuisineId[]): SearchStart {
   const hasCriteria = hasSearchCriteria(cuisines, params.get('keyword') ?? '')
-  const locate = canLocate()
-  const base = { locate: false, waitForHere: false, recent: null }
   if (restored && params.get('here') !== '1') {
-    return { ...base, step: hasCriteria ? 'results' : 'cuisine', city: restored, kind: 'chosen' }
+    return { step: hasCriteria ? 'results' : 'cuisine', city: restored, kind: 'chosen', locate: false, waitForHere: false }
   }
-  if (restored && hasCriteria) {
-    return { ...base, step: 'results', city: restored, kind: locate ? 'here' : 'saved', locate, waitForHere: locate }
-  }
-  const recent = loadRecentCities()[0] ?? null
-  if (locate) return { ...base, step: 'city', city: null, kind: null, locate: true, recent }
-  if (recent) return { ...base, step: 'cuisine', city: recentToCitySelection(recent), kind: 'saved', recent }
-  return { ...base, step: 'city', city: null, kind: null }
+  if (restored && hasCriteria) return { step: 'results', city: restored, kind: 'here', locate: true, waitForHere: true }
+  return { step: 'city', city: null, kind: null, locate: true, waitForHere: false }
 }
 
 function useTaste() {
@@ -251,6 +242,8 @@ function SearchFlow() {
   const locateSeqRef = useRef(0)
   const lastFixAtRef = useRef<number | null>(null)
   const waitingSearchRef = useRef(start.waitForHere)
+  // Step 2 opened with "Change food" on the results: its Back returns there.
+  const pickerFromResultsRef = useRef(false)
   // Healthy and clean is the default hunt; pick other foods to change it.
   const [cuisines, setCuisines] = useState<CuisineId[]>(() => (initialCuisines.length ? initialCuisines : DEFAULT_CUISINES))
   const [dietary, setDietary] = useState<DietaryId[]>(() => {
@@ -724,22 +717,6 @@ function SearchFlow() {
     })
   }
 
-  useEffect(() => {
-    // No location in this browser, so the last area opened in its place: put it in the URL.
-    const recent = start.recent
-    if (start.locate || start.kind !== 'saved' || !recent) return
-    updateParams((next) => {
-      if (next.get('city')) return
-      next.set('city', recent.label)
-      next.set('lat', String(recent.lat))
-      next.set('lon', String(recent.lon))
-      next.set('south', String(recent.south))
-      next.set('west', String(recent.west))
-      next.set('north', String(recent.north))
-      next.set('east', String(recent.east))
-    })
-  }, [start, updateParams])
-
   /** Stop a location lookup still running: a typed search or New search replaces it. */
   function cancelLocate() {
     locateSeqRef.current++
@@ -768,6 +745,8 @@ function SearchFlow() {
         if (waiting) {
           const { cuisines: food, dietary: diet, keyword: kw } = latestSearchRef.current
           void runSearch(selection, food, diet, kw)
+        } else {
+          void runDefaultSearch(selection, 'here')
         }
         return
       }
@@ -781,11 +760,13 @@ function SearchFlow() {
         return
       }
       const recent = loadRecentCities()[0]
-      if (recent) confirmCity(recentToCitySelection(recent), 'saved')
-      setAskMessage({
-        kind: 'problem',
-        text: recent ? `Using your last area, ${shortPlaceLabel(recent.label)}. ${locationProblem(fix.reason)}` : locationProblem(fix.reason),
-      })
+      if (!recent) {
+        setAskMessage({ kind: 'problem', text: locationProblem(fix.reason) })
+        return
+      }
+      const lastArea = recentToCitySelection(recent)
+      confirmCity(lastArea, 'saved')
+      void runDefaultSearch(lastArea, 'saved', locationProblem(fix.reason))
     })()
     return () => {
       cancelled = true
@@ -818,12 +799,10 @@ function SearchFlow() {
         setAskMessage({ kind: 'problem', text: here.problem })
         return
       }
-      const rerun = step === 'results' && hasSearchCriteria(cuisines, keyword)
-      if (here.selection !== city) confirmCity(here.selection, 'here', true)
-      if (rerun) {
-        setScrollToResultsKey((k) => k + 1)
-        await runSearch(here.selection, cuisines, dietary, keyword)
-      }
+      setAsking(false)
+      // Still picking food on step 2: just move there. Otherwise search there.
+      if (step === 'cuisine') confirmCity(here.selection, 'here', true)
+      else await searchInArea(here.selection, 'here')
     } finally {
       setAsking(false)
     }
@@ -938,38 +917,63 @@ function SearchFlow() {
         }
       }
       if (!selection) return
-
-      const food = normalizeCuisineSelection(parsed.healthy ? ['healthy', ...parsed.cuisines] : parsed.cuisines)
-      const diet = Array.from(new Set([...dietary, ...parsed.dietary]))
-      const kw = parsed.keyword
-      const lunch: LunchFilter = parsed.lunchSpecial ? 'special' : parsed.lunch ? 'open' : null
-      if (selection !== city) confirmCity(selection, kind, true)
-      setCuisines(food)
-      setDietary(diet)
-      setKeyword(kw)
-      setHealthyFocus(parsed.healthyFocus)
-      healthyFocusRef.current = parsed.healthyFocus
-      setMaxMiles(parsed.maxMiles)
-      setPriceLevels(parsed.priceLevels)
-      setOpenNowOnly(parsed.openNow)
-      setLunchFilter(lunch)
-      lunchFilterRef.current = lunch
-      const prefs: HealthyPrefs = { avoid: parsed.healthyAvoid, quick: parsed.quick }
-      setHealthyPrefs(prefs)
-      healthyPrefsRef.current = prefs
-      writeSearchParams(food, diet, kw, parsed.healthyFocus, lunch, prefs)
-      setAskMessage({
-        kind: 'understood',
-        text: [
-          ...describeParsedQuery({ ...parsed, location: null, nearMe: false }, (id) => cuisineById(id).label),
-          kind === 'here' ? `near you in ${shortPlaceLabel(selection.label)}` : `near ${selection.label}${lastAreaNote}`,
-        ].join(' · '),
-      })
-      setScrollToResultsKey((k) => k + 1)
-      await runSearch(selection, food, diet, kw)
+      // Searching is done once the place is known; the results show their own progress,
+      // and a new search can start meanwhile (it replaces this one).
+      setAsking(false)
+      await runParsedSearch(parsed, selection, kind, true, lastAreaNote)
     } finally {
       setAsking(false)
     }
+  }
+
+  /**
+   * The main search: healthy and clean food at `selection`. It runs when Hunt4Food opens
+   * and on New search; `problem` says why the phone's location wasn't used.
+   */
+  async function runDefaultSearch(selection: CitySelection, kind: AreaKind, problem = '') {
+    const searching = runParsedSearch(parseSearchQuery('healthy'), selection, kind, false, problem ? ' (your last area)' : '')
+    if (problem) {
+      setAskMessage({ kind: 'problem', text: `Healthy & clean near ${shortPlaceLabel(selection.label)}, your last area. ${problem}` })
+    }
+    await searching
+  }
+
+  /** Set every filter from a parsed search and run it at `selection`. */
+  async function runParsedSearch(
+    parsed: ParsedQuery,
+    selection: CitySelection,
+    kind: AreaKind,
+    pickedByUser: boolean,
+    lastAreaNote = '',
+  ) {
+    const food = normalizeCuisineSelection(parsed.healthy ? ['healthy', ...parsed.cuisines] : parsed.cuisines)
+    const diet = Array.from(new Set([...latestSearchRef.current.dietary, ...parsed.dietary]))
+    const kw = parsed.keyword
+    const lunch: LunchFilter = parsed.lunchSpecial ? 'special' : parsed.lunch ? 'open' : null
+    if (selection !== areaRef.current.city) confirmCity(selection, kind, pickedByUser)
+    setCuisines(food)
+    setDietary(diet)
+    setKeyword(kw)
+    setHealthyFocus(parsed.healthyFocus)
+    healthyFocusRef.current = parsed.healthyFocus
+    setMaxMiles(parsed.maxMiles)
+    setPriceLevels(parsed.priceLevels)
+    setOpenNowOnly(parsed.openNow)
+    setLunchFilter(lunch)
+    lunchFilterRef.current = lunch
+    const prefs: HealthyPrefs = { avoid: parsed.healthyAvoid, quick: parsed.quick }
+    setHealthyPrefs(prefs)
+    healthyPrefsRef.current = prefs
+    writeSearchParams(food, diet, kw, parsed.healthyFocus, lunch, prefs)
+    setAskMessage({
+      kind: 'understood',
+      text: [
+        ...describeParsedQuery({ ...parsed, location: null, nearMe: false }, (id) => cuisineById(id).label),
+        kind === 'here' ? `near you in ${shortPlaceLabel(selection.label)}` : `near ${selection.label}${lastAreaNote}`,
+      ].join(' · '),
+    })
+    setScrollToResultsKey((k) => k + 1)
+    await runSearch(selection, food, diet, kw)
   }
 
   async function startFind() {
@@ -979,6 +983,7 @@ function SearchFlow() {
       return
     }
     if (!city || !hasSearchCriteria(cuisines, keyword) || asking) return
+    pickerFromResultsRef.current = false
     let selection = city
     // Not a chosen area: search where the phone is now.
     if (wantsPhoneLocation(areaKind, false)) {
@@ -994,6 +999,23 @@ function SearchFlow() {
     writeSearchParams(cuisines, dietary, keyword, healthyFocus)
     setAskMessage(null)
     void runSearch(selection, cuisines, dietary, keyword)
+  }
+
+  /** Move the search to `selection` and run the search on screen there (healthy and clean by default). */
+  async function searchInArea(selection: CitySelection, kind: AreaKind) {
+    confirmCity(selection, kind, true)
+    if (!hasSearchCriteria(cuisines, keyword)) {
+      await runParsedSearch(parseSearchQuery('healthy'), selection, kind, true)
+      return
+    }
+    const where = kind === 'here' ? `near you in ${shortPlaceLabel(selection.label)}` : `near ${selection.label}`
+    setAskMessage({
+      kind: 'understood',
+      text: [...cuisines.map((id) => cuisineById(id).label), ...(keyword.trim() ? [`“${keyword.trim()}”`] : []), where].join(' · '),
+    })
+    setScrollToResultsKey((k) => k + 1)
+    writeSearchParams(cuisines, dietary, keyword, healthyFocus)
+    await runSearch(selection, cuisines, dietary, keyword)
   }
 
   function openMapPicker() {
@@ -1067,10 +1089,17 @@ function SearchFlow() {
 
   const lovedIds = useMemo(() => new Set(taste.loved.map((l) => l.id)), [taste.loved])
   const shortlistedIds = useMemo(() => new Set(shortlist.map((s) => s.id)), [shortlist])
-  const firstHunt4FoodScreen = step === 'city' || (step === 'cuisine' && !cityPickedByUser)
+  // The opening screen (location, then the default healthy results): Back leaves for Base Camp.
+  const firstHunt4FoodScreen = step === 'city' || (!cityPickedByUser && (step === 'cuisine' || step === 'results'))
   useLeaveToLodgeOnBrowserBack(firstHunt4FoodScreen)
 
   function backFromCuisine() {
+    // Opened from the results with "Change food": go back to them.
+    if (pickerFromResultsRef.current) {
+      pickerFromResultsRef.current = false
+      setStep('results')
+      return
+    }
     if (cityPickedByUser) {
       setShowMapPicker(true)
       setStep('city')
@@ -1105,7 +1134,7 @@ function SearchFlow() {
       {step === 'city' && showMapPicker && (
         <Suspense fallback={<p className="muted">Loading map…</p>}>
           <CityStep
-            onConfirm={(selection) => confirmCity(selection, 'chosen', true)}
+            onConfirm={(selection) => void searchInArea(selection, 'chosen')}
             onAsk={(text) => void askSearch(text)}
             onBack={() => {
               setShowMapPicker(false)
@@ -1230,7 +1259,10 @@ function SearchFlow() {
               }),
             )
           }}
-          onBack={() => setStep('cuisine')}
+          onBack={() => {
+            pickerFromResultsRef.current = true
+            setStep('cuisine')
+          }}
           onNewSearch={startNewCitySearch}
           scrollToResultsKey={scrollToResultsKey}
         />

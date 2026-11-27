@@ -20,9 +20,9 @@ type Props = {
   onUseLocation?: () => void
 }
 
-/** Healthy first. "Healthy near me" always searches where the phone is now. */
+/** Healthy and clean first. "Healthy & clean near me" always searches where the phone is now. */
 const QUICK_PICKS = [
-  { label: 'Healthy near me', query: 'healthy near me' },
+  { label: 'Healthy & clean near me', query: 'healthy near me' },
     { label: 'True Food Kitchen', query: 'True Food Kitchen' },
     { label: 'Smoothies & açaí', query: 'smoothie and acai bowls' },
     { label: 'Wild salmon', query: 'salmon' },

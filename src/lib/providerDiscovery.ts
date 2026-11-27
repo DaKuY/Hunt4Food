@@ -218,11 +218,13 @@ async function fetchProviderCandidates(
 ): Promise<ProviderCandidate[]> {
   if (!terms.length) return []
 
+  // About a 1 km grid: the default search runs on every open, and a phone's fix wobbles
+  // a little each time, so nearby opens on the same day reuse one set of Google / Yelp lookups.
   const cacheKey = [
-    'providerDiscovery:v2',
+    'providerDiscovery:v3',
     utcDayKey(),
-    city.center.lat.toFixed(3),
-    city.center.lon.toFixed(3),
+    city.center.lat.toFixed(2),
+    city.center.lon.toFixed(2),
     terms.map((term) => term.toLowerCase()).sort().join('|'),
   ].join(':')
   const cached = readCache<{ places: ProviderCandidate[]; sources: ProviderSources }>(cacheKey)
