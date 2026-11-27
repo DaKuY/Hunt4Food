@@ -60,7 +60,9 @@ describe('healthy search on a realistic neighborhood', () => {
   it('leads with the brands and whole-food spots people mean by healthy', async () => {
     const { displayed } = await hunt(POOL, 'Realistic')
     const top = names(displayed)
-    expect(top.slice(0, 6)).toEqual(expect.arrayContaining(['True Food Kitchen', 'Tropical Smoothie Cafe', 'Pure Green']))
+    expect(top.slice(0, 6)).toEqual(expect.arrayContaining(['True Food Kitchen', 'Pure Green']))
+    // Healthy and clean: Pure Green ranks ahead of sugar-forward chains like Tropical Smoothie.
+    if (top.includes('Tropical Smoothie Cafe')) expect(top.indexOf('Pure Green')).toBeLessThan(top.indexOf('Tropical Smoothie Cafe'))
     expect(top).toEqual(expect.arrayContaining(['Local Chophouse', 'Poke Paradise', 'Green Leaf Vegan Cafe']))
     for (const name of NOT_HEALTHY) expect(top).not.toContain(name)
   })

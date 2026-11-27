@@ -15,6 +15,17 @@ export function isAllowedProxyUrl(value: string): boolean {
 }
 
 /**
+ * When the proxy fails to load (deleted or redeployed Apps Script: Google answers with a 404 page),
+ * stop calling it for a while instead of failing once per place in every list.
+ */
+const PROXY_COOLDOWN_MS = 10 * 60 * 1000
+const proxyDownUntil = new Map<string, number>()
+
+export function proxyUnavailable(baseUrl: string = ratingsProxyUrl()): boolean {
+  return (proxyDownUntil.get(baseUrl.trim()) ?? 0) > Date.now()
+}
+
+/**
  * JSONP fetch for Google Apps Script web apps (CORS-safe from GitHub Pages).
  */
 export function jsonpGet<T>(
@@ -24,6 +35,9 @@ export function jsonpGet<T>(
 ): Promise<T> {
   if (!isAllowedProxyUrl(baseUrl)) {
     return Promise.reject(new Error('Proxy URL must be a Google Apps Script /exec URL'))
+  }
+  if (proxyUnavailable(baseUrl)) {
+    return Promise.reject(new Error('Proxy unavailable'))
   }
   const url = new URL(baseUrl.trim())
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v))
@@ -51,6 +65,7 @@ export function jsonpGet<T>(
     script.src = url.toString()
     script.onerror = () => {
       cleanup()
+      proxyDownUntil.set(baseUrl.trim(), Date.now() + PROXY_COOLDOWN_MS)
       reject(new Error('Proxy request failed'))
     }
     document.head.appendChild(script)

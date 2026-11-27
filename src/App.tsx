@@ -114,6 +114,8 @@ function cityFromParams(params: URLSearchParams): CitySelection | null {
  * so the list can reach the True Food Kitchen or smoothie bar one town over.
  */
 const HEALTHY_MIN_HALF_SPAN = { lat: 0.07, lon: 0.085 }
+const DEFAULT_CUISINES: CuisineId[] = ['healthy']
+
 /** "Coppell, Texas, United States" → "Coppell". */
 function shortPlaceLabel(label: string): string {
   return label.split(',')[0]!.trim() || label
@@ -209,7 +211,8 @@ function SearchFlow() {
   const [resolvingLocation, setResolvingLocation] = useState(
     () => !restored && !initialRecent && typeof navigator !== 'undefined' && 'geolocation' in navigator,
   )
-  const [cuisines, setCuisines] = useState<CuisineId[]>(() => initialCuisines)
+  // Healthy and clean is the default hunt; pick other foods to change it.
+  const [cuisines, setCuisines] = useState<CuisineId[]>(() => (initialCuisines.length ? initialCuisines : DEFAULT_CUISINES))
   const [dietary, setDietary] = useState<DietaryId[]>(() => {
     const d = params.get('dietary')
     if (d) return d.split(',').filter((id) => isKnownDietaryId(id)) as DietaryId[]
@@ -867,7 +870,7 @@ function SearchFlow() {
     setAskMessage(null)
     setStep('city')
     setCity(null)
-    setCuisines([])
+    setCuisines(DEFAULT_CUISINES)
     setKeyword('')
     setRawPlaces([])
     setDisplayPlaces([])

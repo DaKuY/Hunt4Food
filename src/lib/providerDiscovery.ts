@@ -160,7 +160,8 @@ export function lunchSpecialTerms(selectedCuisines: CuisineId[]): string[] {
  * at most 3 terms per call.
  */
 export const HEALTHY_DISCOVERY_TERM_GROUPS: string[][] = [
-  ['True Food Kitchen', 'Tropical Smoothie Cafe', 'Pure Green'],
+  // Clean brands OpenStreetMap often lacks (Pure Green in Coppell isn't mapped); sugary smoothie chains usually are.
+  ['True Food Kitchen', 'Pure Green', 'Flower Child'],
   ['grass fed steak', 'wild salmon', 'healthy bowls'],
 ]
 
