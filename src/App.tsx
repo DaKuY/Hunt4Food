@@ -16,7 +16,14 @@ import { usePlaceRatings } from './hooks/usePlaceRatings'
 import { usePlaceSeedOil } from './hooks/usePlaceSeedOil'
 import { buildSearchShareUrl } from './lib/links'
 import { coordsToCitySelection, findTown, searchCities, type GeocodeHit } from './lib/geocode'
-import { describeParsedQuery, parseSearchQuery, withoutPlaceGuess, type ParsedQuery } from './lib/queryParser'
+import {
+  DEFAULT_HEALTHY_FOCUS,
+  describeParsedQuery,
+  parseSearchQuery,
+  withDefaultHealthyFocus,
+  withoutPlaceGuess,
+  type ParsedQuery,
+} from './lib/queryParser'
 import { lunchVerdict } from './lib/lunch'
 import { applyRequirements } from './lib/seedOilStatus'
 import { ensureCacheGeneration, pruneExpiredCache } from './lib/storage'
@@ -47,7 +54,15 @@ import {
   toggleShortlist,
   type ShortlistItem,
 } from './lib/taste'
-import { locationProblem, needsNewFix, stillInArea, wantsPhoneLocation, type AreaKind, type PhoneFix } from './lib/searchArea'
+import {
+  isLegacyPhoneArea,
+  locationProblem,
+  needsNewFix,
+  stillInArea,
+  wantsPhoneLocation,
+  type AreaKind,
+  type PhoneFix,
+} from './lib/searchArea'
 import type { CitySelection, CuisineId, DietaryId, HealthyFocusId, MapBounds, RankedRestaurant, Restaurant, TasteProfile } from './lib/types'
 import { AskBar } from './components/AskBar'
 import { CuisineStep } from './components/CuisineStep'
@@ -151,15 +166,15 @@ function canLocate(): boolean {
   return typeof navigator !== 'undefined' && 'geolocation' in navigator
 }
 
-/** The phone's location now (a fix up to a minute old is fine), or why it isn't available. */
-function phonePosition(timeoutMs = 10000): Promise<PhoneFix> {
+/** The phone's location now (by default a fix up to a minute old is fine), or why it isn't available. */
+function phonePosition(timeoutMs = 10000, maximumAge = 60000): Promise<PhoneFix> {
   if (!canLocate()) return Promise.resolve({ ok: false, reason: 'unsupported' })
   return new Promise((resolve) => {
     navigator.geolocation.getCurrentPosition(
       (pos) => resolve({ ok: true, lat: pos.coords.latitude, lon: pos.coords.longitude }),
       // 1 is PERMISSION_DENIED: blocked for this site or for Safari.
       (err) => resolve({ ok: false, reason: err.code === 1 ? 'denied' : 'unavailable' }),
-      { enableHighAccuracy: false, timeout: timeoutMs, maximumAge: 60000 },
+      { enableHighAccuracy: false, timeout: timeoutMs, maximumAge },
     )
   })
 }
@@ -181,7 +196,9 @@ type SearchStart = {
  */
 function searchStart(restored: CitySelection | null, params: URLSearchParams, cuisines: CuisineId[]): SearchStart {
   const hasCriteria = hasSearchCriteria(cuisines, params.get('keyword') ?? '')
-  if (restored && params.get('here') !== '1') {
+  // Older versions wrote the phone's location as a plain area ("Sparrow Lane"): treat it as "near me".
+  const here = params.get('here') === '1' || (restored !== null && isLegacyPhoneArea(restored))
+  if (restored && !here) {
     return { step: hasCriteria ? 'results' : 'cuisine', city: restored, kind: 'chosen', locate: false, waitForHere: false }
   }
   if (restored && hasCriteria) return { step: 'results', city: restored, kind: 'here', locate: true, waitForHere: true }
@@ -251,8 +268,9 @@ function SearchFlow() {
     if (d) return d.split(',').filter((id) => isKnownDietaryId(id)) as DietaryId[]
     return taste.dietaryPrefs
   })
-  const [healthyFocus, setHealthyFocus] = useState<HealthyFocusId[]>(
-    () => (params.get('focus') ?? '').split(',').filter(isHealthyFocusId),
+  // A fresh visit starts with Clean kitchens selected; a link keeps the kind it was made with.
+  const [healthyFocus, setHealthyFocus] = useState<HealthyFocusId[]>(() =>
+    params.has('focus') || start.city ? (params.get('focus') ?? '').split(',').filter(isHealthyFocusId) : [...DEFAULT_HEALTHY_FOCUS],
   )
   const healthyFocusRef = useRef(healthyFocus)
   healthyFocusRef.current = healthyFocus
@@ -781,7 +799,7 @@ function SearchFlow() {
     if (!force && areaKind === 'here' && city && !needsNewFix(lastFixAtRef.current, Date.now())) {
       return { ok: true, selection: city }
     }
-    const fix = await phonePosition()
+    const fix = await phonePosition(10000, force ? 0 : 60000)
     if (!fix.ok) return { ok: false, problem: locationProblem(fix.reason) }
     lastFixAtRef.current = Date.now()
     if (stillInArea(areaKind, city, fix)) return { ok: true, selection: city! }
@@ -881,13 +899,17 @@ function SearchFlow() {
           ? { ...parsed, location: parsed.placeGuess, placeGuess: null, nearMe: false }
           : withoutPlaceGuess(parsed)
       }
-      // "in Dallas" typed under foods already picked with the chips keeps those foods.
-      if (!parsed.cuisines.length && !parsed.healthy && !parsed.keyword && picked.length) {
+      // "in Dallas" typed under foods already picked with the chips keeps those foods (and kind of healthy).
+      const keepPicked = !parsed.cuisines.length && !parsed.healthy && !parsed.keyword && picked.length > 0
+      if (keepPicked) {
         parsed.healthy = picked.includes('healthy')
         parsed.cuisines = picked.filter((id) => id !== 'healthy')
+        if (!parsed.healthyFocus.length) parsed.healthyFocus = healthyFocus
       }
       // No food named ("Coppell", "food in Grapevine TX", "lunch"): Hunt4Food's healthy picks.
       if (!parsed.cuisines.length && !parsed.healthy && !parsed.keyword) parsed = { ...parsed, healthy: true }
+      // Plain "healthy" starts with Clean kitchens selected.
+      if (!keepPicked) parsed = withDefaultHealthyFocus(parsed)
 
       // A typed place wins; otherwise the phone's location now, unless an area was chosen.
       let selection = city
@@ -905,7 +927,8 @@ function SearchFlow() {
         selection = nearSelection(hits[0]!)
         kind = 'chosen'
       } else if (!selection || wantsPhoneLocation(areaKind, parsed.nearMe)) {
-        const here = await locateForSearch()
+        // "near me" (the Healthy & clean near me button) gets a new fix every time.
+        const here = await locateForSearch(parsed.nearMe)
         if (here.ok) {
           selection = here.selection
           kind = 'here'
@@ -931,7 +954,7 @@ function SearchFlow() {
    * and on New search; `problem` says why the phone's location wasn't used.
    */
   async function runDefaultSearch(selection: CitySelection, kind: AreaKind, problem = '') {
-    const searching = runParsedSearch(parseSearchQuery('healthy'), selection, kind, false, problem ? ' (your last area)' : '')
+    const searching = runParsedSearch(withDefaultHealthyFocus(parseSearchQuery('healthy')), selection, kind, false, problem ? ' (your last area)' : '')
     if (problem) {
       setAskMessage({ kind: 'problem', text: `Healthy & clean near ${shortPlaceLabel(selection.label)}, your last area. ${problem}` })
     }
@@ -1005,7 +1028,7 @@ function SearchFlow() {
   async function searchInArea(selection: CitySelection, kind: AreaKind) {
     confirmCity(selection, kind, true)
     if (!hasSearchCriteria(cuisines, keyword)) {
-      await runParsedSearch(parseSearchQuery('healthy'), selection, kind, true)
+      await runParsedSearch(withDefaultHealthyFocus(parseSearchQuery('healthy')), selection, kind, true)
       return
     }
     const where = kind === 'here' ? `near you in ${shortPlaceLabel(selection.label)}` : `near ${selection.label}`
@@ -1033,6 +1056,8 @@ function SearchFlow() {
     locateSeqRef.current++
     waitingSearchRef.current = false
     setAreaKind(null)
+    setHealthyFocus([...DEFAULT_HEALTHY_FOCUS])
+    healthyFocusRef.current = [...DEFAULT_HEALTHY_FOCUS]
     if (canLocate()) {
       setResolvingLocation(true)
       setLocateRequest((n) => n + 1)

@@ -3,6 +3,7 @@ import {
   extractHealthySignals,
   healthyQualityTier,
   healthySignalScore,
+  matchesHealthyFocus,
 } from './healthySignals'
 import type { Restaurant } from './types'
 
@@ -65,5 +66,19 @@ describe('healthyQualityTier', () => {
     const smoothieSignals = extractHealthySignals('Smoothies and acai bowls', 'listing')
     expect(healthyQualityTier(place({ name: 'Neighborhood Juice', cuisines: ['juice'] }), smoothieSignals)).toBe(2)
     expect(healthyQualityTier(place({ name: 'Generic Pizza', cuisines: ['pizza'] }), [])).toBe(3)
+  })
+})
+
+describe('Clean kitchens (the default kind of healthy)', () => {
+  it('includes clean kitchens and the organic juice bars without the sugar', () => {
+    expect(matchesHealthyFocus(place({ name: 'True Food Kitchen' }), [], 'clean')).toBe(true)
+    expect(matchesHealthyFocus(place({ name: 'Pure Green', cuisines: ['juice'] }), [], 'clean')).toBe(true)
+    expect(matchesHealthyFocus(place({ name: 'Clean Juice', cuisines: ['juice'] }), [], 'clean')).toBe(true)
+  })
+
+  it('leaves out sugary smoothie chains and plain restaurants', () => {
+    expect(matchesHealthyFocus(place({ name: 'Smoothie King', cuisines: ['smoothie'] }), [], 'clean')).toBe(false)
+    expect(matchesHealthyFocus(place({ name: 'Tropical Smoothie Cafe', cuisines: ['smoothie'] }), [], 'clean')).toBe(false)
+    expect(matchesHealthyFocus(place({ name: 'Neighborhood Grill' }), [], 'clean')).toBe(false)
   })
 })

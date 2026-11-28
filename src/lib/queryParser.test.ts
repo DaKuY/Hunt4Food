@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { cuisineById } from '../data/cuisines'
-import { describeParsedQuery, parseSearchQuery, withoutPlaceGuess } from './queryParser'
+import { describeParsedQuery, parseSearchQuery, withDefaultHealthyFocus, withoutPlaceGuess } from './queryParser'
 
 describe('parseSearchQuery', () => {
   it('understands the example request', () => {
@@ -144,5 +144,23 @@ describe('parseSearchQuery lunch', () => {
   it('names the kind of healthy in the confirmation line', () => {
     expect(describeParsedQuery(parseSearchQuery('healthy salmon near Coppell TX'), (id) => id)).toEqual(['Healthy & clean', 'salmon & seafood', 'near Coppell TX'])
     expect(describeParsedQuery(parseSearchQuery('true food kitchen'), (id) => id)).toEqual(['Healthy & clean', '“True Food Kitchen”'])
+  })
+})
+
+describe('withDefaultHealthyFocus', () => {
+  const focus = (q: string) => withDefaultHealthyFocus(parseSearchQuery(q)).healthyFocus
+
+  it('starts plain healthy searches with Clean kitchens selected', () => {
+    expect(focus('healthy')).toEqual(['clean'])
+    expect(focus('healthy near me')).toEqual(['clean'])
+    expect(focus('healthy no seed oils')).toEqual(['clean'])
+  })
+
+  it('keeps a kind, dish, brand or other food that was asked for', () => {
+    expect(focus('salmon')).toEqual(['seafood'])
+    expect(focus('smoothie and acai bowls')).toEqual(['smoothie'])
+    expect(focus('True Food Kitchen')).toEqual([])
+    expect(focus('healthy mexican')).toEqual([])
+    expect(focus('pizza')).toEqual([])
   })
 })

@@ -46,6 +46,23 @@ export function stillInArea(kind: AreaKind | null, area: CitySelection | null, f
   return kind === 'here' && area !== null && distanceMeters(area.center, fix) < SAME_AREA_METERS
 }
 
+/**
+ * Earlier versions saved the phone's location as an ordinary area: the fix ±0.04° and a street
+ * label ("Sparrow Lane, Coppell, Texas, United States"). Such a link should find the phone again.
+ */
+export function isLegacyPhoneArea(area: Pick<CitySelection, 'center' | 'bounds'>): boolean {
+  const d = 0.04
+  const near = (a: number, b: number) => Math.abs(a - b) < 1e-6
+  const { center: c, bounds: b } = area
+  return near(b.north - c.lat, d) && near(c.lat - b.south, d) && near(b.east - c.lon, d) && near(c.lon - b.west, d)
+}
+
+/** "Sparrow Lane, Coppell, Texas, United States" (an old phone area) → "Coppell, Texas, United States". */
+export function legacyTownLabel(label: string): string {
+  const parts = label.split(',').map((part) => part.trim()).filter(Boolean)
+  return parts.length >= 4 ? parts.slice(1).join(', ') : label
+}
+
 /** What to tell someone whose phone location didn't come through. */
 export function locationProblem(reason: Exclude<PhoneFix, { ok: true }>['reason']): string {
   if (reason === 'denied') {

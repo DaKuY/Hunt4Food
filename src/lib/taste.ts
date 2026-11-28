@@ -1,3 +1,4 @@
+import { isLegacyPhoneArea, legacyTownLabel } from './searchArea'
 import { readJson, writeJson } from './storage'
 import type { CitySelection, DietaryId, TastePlace, TasteProfile } from './types'
 
@@ -162,7 +163,11 @@ export type RecentCity = {
 const RECENT_KEY = 'recentCities'
 
 export function loadRecentCities(): RecentCity[] {
-  return readJson<RecentCity[]>(RECENT_KEY, []).slice(0, 8)
+  // Older versions labelled the phone's location by street ("Sparrow Lane, Coppell, …"): show the town.
+  const recent = readJson<RecentCity[]>(RECENT_KEY, [])
+    .slice(0, 8)
+    .map((c) => (isLegacyPhoneArea({ center: { lat: c.lat, lon: c.lon }, bounds: c }) ? { ...c, label: legacyTownLabel(c.label) } : c))
+  return recent.filter((c, i) => recent.findIndex((other) => other.label === c.label) === i)
 }
 
 export function recentToCitySelection(recent: RecentCity): CitySelection {

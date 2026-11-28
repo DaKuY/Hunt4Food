@@ -264,7 +264,7 @@ export function healthyCategoryReason(place: Restaurant, signals: HealthySignal[
 }
 
 export const HEALTHY_FOCUS_OPTIONS: Array<{ id: HealthyFocusId; label: string; hint: string }> = [
-  { id: 'clean', label: 'Clean kitchens', hint: 'True Food Kitchen–style; grass-fed, organic, no seed oils' },
+  { id: 'clean', label: 'Clean kitchens', hint: 'True Food Kitchen–style and clean juice bars; grass-fed, organic, no seed oils' },
   { id: 'smoothie', label: 'Smoothies & bowls', hint: 'Tropical Smoothie, Pure Green, juice and açaí bars' },
   { id: 'steak', label: 'Steak', hint: 'Steakhouses and grass-fed steak' },
   { id: 'seafood', label: 'Salmon & seafood', hint: 'Wild salmon, seafood, sushi and poke' },
@@ -285,7 +285,8 @@ export function matchesHealthyFocus(
   const chain = matchKnownChain(place)
   switch (focus) {
     case 'clean':
-      return chain?.lane === 'clean_cooking' || hasPrimaryHealthyEvidence(signals) || /\b(organic|farm[-_ ]to[-_ ]table)\b/.test(blob)
+      // Clean kitchens, and the organic juice bars without the sugar (Pure Green, Clean Juice, Nekter).
+      return (chain !== null && !chain.sugary) || hasPrimaryHealthyEvidence(signals) || /\b(organic|farm[-_ ]to[-_ ]table)\b/.test(blob)
     case 'smoothie':
       return chain?.lane === 'smoothie' || isSmoothieOrJuice(place, signals)
     case 'steak':

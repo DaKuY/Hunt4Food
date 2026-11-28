@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   distanceMeters,
   FRESH_FIX_MS,
+  isLegacyPhoneArea,
+  legacyTownLabel,
   locationProblem,
   needsNewFix,
   stillInArea,
@@ -84,5 +86,23 @@ describe('townLabel', () => {
     expect(townLabel({ name: 'FM 1938', type: 'street', county: 'Denton County', state: 'Texas' })).toBe('Denton County, Texas')
     expect(townLabel({ name: 'Somewhere' })).toBe('Somewhere')
     expect(townLabel({})).toBeNull()
+  })
+})
+
+describe('links saved from the phone by earlier versions', () => {
+  // From a real link: #/?city=Sparrow+Lane%2C+Coppell%2C+Texas%2C+United+States&lat=32.96678126265466…
+  const sparrowLane = {
+    center: { lat: 32.96678126265466, lon: -96.97075367161845 },
+    bounds: { south: 32.926781262654664, west: -97.01075367161846, north: 33.00678126265466, east: -96.93075367161845 },
+  }
+
+  it('recognises the phone-area shape (the fix ±0.04°)', () => {
+    expect(isLegacyPhoneArea(sparrowLane)).toBe(true)
+    expect(isLegacyPhoneArea(coppell)).toBe(false)
+  })
+
+  it('names the town instead of the street', () => {
+    expect(legacyTownLabel('Sparrow Lane, Coppell, Texas, United States')).toBe('Coppell, Texas, United States')
+    expect(legacyTownLabel('Coppell, Texas, United States')).toBe('Coppell, Texas, United States')
   })
 })
