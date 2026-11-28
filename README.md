@@ -15,9 +15,9 @@ The big search box is the main way in. Type what you want in plain words, or tap
 
 **Healthy first, then the next best.** Clean-food evidence (grass-fed, no seed oils, avocado oil, organic, wild-caught), known healthy brands (True Food Kitchen, Flower Child, Tropical Smoothie, Pure Green…), salmon, steak, smoothie and plant-forward spots lead. When fewer than ten turn up, the list is filled with clearly labeled **Next best** picks: healthy spots outside your exact choice, then whole-food-friendly kitchens (Mediterranean, poke, sushi, Vietnamese, Peruvian…). Pizza, burgers, wings, fried chicken, fast food, bars and dessert never appear. Healthy searches look at least ~5 miles around the town center.
 
-**Sources.** Every search combines OpenStreetMap with Google Places and Yelp (`/api/discover`, server keys) and, in healthy mode, review mentions from the ratings proxy. The results say which sources answered ("Searched OpenStreetMap · Google · Yelp"), and "Google not connected" means `GOOGLE_PLACES_API_KEY` is missing in Vercel. A healthy hunt makes two discovery calls: your own words first, then the healthy brands.
+**Sources.** Google Places is the main source (`/api/discover`, server key `GOOGLE_PLACES_API_KEY`), with Yelp alongside. Each Google query asks for 20 results (billed per request, not per result) plus Google's editorial summary and "serves vegetarian" flag, which feed the healthy-evidence reader. A healthy hunt makes two discovery calls: your own words (or "healthy restaurant", grass-fed steak, wild salmon) and the clean brands. A cuisine search also asks for the healthy version ("healthy mexican"), and every ranking leans healthy: clean-food evidence and plant-forward kitchens rise, dessert-only spots sink. OpenStreetMap is used **only** when Google isn't connected or finds fewer than five places; the results line says which sources answered.
 
-**Maps.** Google Maps (Maps JavaScript API) when `VITE_GOOGLE_MAPS_API_KEY` is set: numbered pins in result order, brass pins for next-best picks, tap a pin for directions in Google Maps. Free up to 10,000 map loads a month ([pricing](https://developers.google.com/maps/billing-and-pricing/pricing)); Hunt4Food loads a map only on the area picker and the results. Without a key, or if Google refuses it, the OpenStreetMap map is used.
+**Maps.** Always Google. With `VITE_GOOGLE_MAPS_API_KEY` (or a browser Places key with Maps JavaScript API enabled): the interactive map with numbered pins, brass pins for next-best picks, tap a pin for directions. Free up to 10,000 map loads a month ([pricing](https://developers.google.com/maps/billing-and-pricing/pricing)). Without a key, or if Google refuses it, a keyless Google Maps embed shows the area (picker) or the #1 pick (results).
 
 ### Google Maps setup (one-time)
 
@@ -27,7 +27,7 @@ The big search box is the main way in. Type what you want in plain words, or tap
 4. Vercel → Hunt4Food → Settings → Environment Variables: `VITE_GOOGLE_MAPS_API_KEY` and `VITE_GOOGLE_MAPS_MAP_ID` (Production + Preview), then redeploy
 5. Optional: Billing → Budgets & alerts → a $1 budget alert, so you hear about it long before any charge
 
-Google Places discovery with ratings is the Text Search Enterprise SKU: 1,000 free requests a month. Results are cached per city per day in the browser, so personal use stays within it.
+Google Places discovery with ratings and editorial summaries is the Text Search Enterprise + Atmosphere SKU: 1,000 free requests a month. Results are cached per city per day in the browser, so personal use stays within it.
 
 ## What it does
 

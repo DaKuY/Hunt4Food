@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { describeParsedQuery, parseSearchQuery } from '../lib/queryParser'
 import { cuisineById } from '../data/cuisines'
 import { coordsToCitySelection, reverseGeocode, searchCities, type GeocodeHit } from '../lib/geocode'
@@ -7,7 +7,7 @@ import { googleMapsUsable } from '../lib/googleMapsLoader'
 import type { CitySelection, MapBounds } from '../lib/types'
 import { GoogleAreaMap } from './GoogleMaps'
 
-const LeafletAreaMap = lazy(() => import('./LeafletAreaMap'))
+import { GoogleEmbedMap } from './GoogleEmbedMap'
 
 type Props = {
   onConfirm: (city: CitySelection) => void
@@ -301,11 +301,19 @@ export function CityStep({ onConfirm, onAsk, onBack, initial }: Props) {
             onFail={() => setGoogleMap(false)}
           />
         ) : (
-          <Suspense fallback={<div className="city-map" />}>
-            <LeafletAreaMap key={mapKey} center={mapCenter} zoom={draft ? 12 : 11} rect={draft?.bounds ?? null} onBounds={watchBounds} />
-          </Suspense>
+          <GoogleEmbedMap
+            key={mapKey}
+            className="city-map"
+            center={{ lat: mapCenter[0], lon: mapCenter[1] }}
+            zoom={draft ? 12 : 11}
+            title="Map of the search area"
+          />
         )}
-        <p className="map-hint">Pan and zoom — the visible area becomes your search box.</p>
+        <p className="map-hint">
+          {googleMap
+            ? 'Pan and zoom — the visible area becomes your search box.'
+            : 'Search a town above or use your location — the map follows.'}
+        </p>
       </div>
 
       <div className="step-actions row">

@@ -15,6 +15,9 @@ type ProviderCandidate = {
   price?: string | null
   priceLevel?: string | number | null
   url?: string | null
+  /** Google's editorial summary ("Organic, plant-forward bowls…"): healthy evidence. */
+  summary?: string
+  servesVegetarianFood?: boolean
   matchedTerm: string
 }
 
@@ -25,7 +28,9 @@ type ProviderResult = {
 }
 
 const MAX_TERMS = 3
-const RESULTS_PER_TERM = 8
+// Google bills Text Search per request, not per result: ask for the maximum (20).
+export const GOOGLE_RESULTS_PER_TERM = 20
+const YELP_RESULTS_PER_TERM = 8
 const RADIUS_METERS = 16_000
 
 function cleanTerms(url: URL): string[] {
@@ -75,6 +80,23 @@ function dedupe(places: ProviderCandidate[]): ProviderCandidate[] {
   return out
 }
 
+export const GOOGLE_FIELD_MASK = [
+  'places.id',
+  'places.displayName',
+  'places.formattedAddress',
+  'places.location',
+  'places.types',
+  'places.primaryType',
+  'places.rating',
+  'places.userRatingCount',
+  'places.googleMapsUri',
+  'places.websiteUri',
+  'places.nationalPhoneNumber',
+  'places.priceLevel',
+  'places.editorialSummary',
+  'places.servesVegetarianFood',
+].join(',')
+
 async function googleSearch(
   apiKey: string,
   term: string,
@@ -88,12 +110,14 @@ async function googleSearch(
       'content-type': 'application/json',
       'X-Goog-Api-Key': apiKey,
       'X-Goog-FieldMask':
-        'places.id,places.displayName,places.formattedAddress,places.location,places.types,places.rating,places.userRatingCount,places.googleMapsUri,places.websiteUri,places.nationalPhoneNumber,places.priceLevel',
+        // editorialSummary + servesVegetarianFood make this the Text Search "Enterprise + Atmosphere"
+        // SKU (1,000 free requests a month, like the Enterprise SKU the rating already needed).
+        GOOGLE_FIELD_MASK,
       referer: 'https://hunt4food.andrewcamero.com/',
     },
     body: JSON.stringify({
       textQuery: `${searchPhrase(term)} near ${city}`,
-      maxResultCount: RESULTS_PER_TERM,
+      maxResultCount: GOOGLE_RESULTS_PER_TERM,
       locationBias: {
         circle: {
           center: { latitude: lat, longitude: lon },
@@ -112,6 +136,9 @@ async function googleSearch(
       formattedAddress?: string
       location?: { latitude?: number; longitude?: number }
       types?: string[]
+      primaryType?: string
+      editorialSummary?: { text?: string }
+      servesVegetarianFood?: boolean
       rating?: number
       userRatingCount?: number
       googleMapsUri?: string
@@ -135,11 +162,13 @@ async function googleSearch(
       address: place.formattedAddress,
       website: place.websiteUri,
       phone: place.nationalPhoneNumber,
-      categories: place.types ?? [],
+      categories: Array.from(new Set([place.primaryType, ...(place.types ?? [])].filter((t): t is string => Boolean(t)))),
       rating: place.rating ?? null,
       reviewCount: place.userRatingCount ?? null,
       priceLevel: place.priceLevel ?? null,
       url: place.googleMapsUri ?? null,
+      summary: place.editorialSummary?.text?.trim().slice(0, 400) || undefined,
+      servesVegetarianFood: place.servesVegetarianFood ?? undefined,
       matchedTerm: term,
     }]
   })
@@ -158,7 +187,7 @@ async function yelpSearch(
   url.searchParams.set('latitude', String(lat))
   url.searchParams.set('longitude', String(lon))
   url.searchParams.set('radius', String(RADIUS_METERS))
-  url.searchParams.set('limit', String(RESULTS_PER_TERM))
+  url.searchParams.set('limit', String(YELP_RESULTS_PER_TERM))
   url.searchParams.set('sort_by', 'best_match')
 
   const response = await fetch(url, {

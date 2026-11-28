@@ -1,5 +1,5 @@
 import { cuisineById } from '../data/cuisines'
-import { matchKnownChain } from './healthySignals'
+import { healthyInstantBoost, isIndulgentOnly, isPlantForward, matchKnownChain } from './healthySignals'
 import { dishSearchAllowsFastFood, keywordBoost } from './keyword'
 import { seedOilGradeScore, type SeedOilInfo } from './seedOil'
 import type {
@@ -125,11 +125,11 @@ function dietaryBoost(place: Restaurant, dietary: DietaryId[]): { points: number
   for (const d of dietary) {
     if (d === 'vegetarian' && isYes(place.vegetarian)) {
       points += 8
-      reasons.push('Marked vegetarian-friendly on the map')
+      reasons.push('Serves vegetarian food')
     }
     if (d === 'vegan' && (isYes(place.vegan) || place.cuisines.includes('vegan'))) {
       points += 10
-      reasons.push('Vegan-friendly signal in OpenStreetMap')
+      reasons.push('Vegan-friendly listing')
     }
     if (d === 'gluten_free' && isYes(place.glutenFree)) {
       points += 8
@@ -255,6 +255,26 @@ function tasteBoost(place: Restaurant, taste: TasteProfile): { points: number; r
   return { points, reasons }
 }
 
+/**
+ * Every search leans healthy: within the cuisine you asked for, places with clean-food
+ * evidence (grass-fed, organic, no seed oils, wild-caught — from the name, categories or
+ * Google's description), known clean brands and plant-forward kitchens rise; dessert-only
+ * and fried-indulgence spots sink. Capped so a strong cuisine match still matters most.
+ */
+export function healthyTilt(place: Restaurant): { points: number; reasons: string[] } {
+  const instant = healthyInstantBoost(place)
+  let points = Math.min(24, Math.round(instant.points * 0.4))
+  const reasons: string[] = []
+  if (instant.points >= 20 && instant.reasons[0]) reasons.push(`Healthier pick: ${instant.reasons[0].replace(/^Clean-food evidence: /, '')}`)
+  if (isPlantForward(place)) {
+    points += 6
+    if (!reasons.length) reasons.push('Healthier pick: plant-forward menu')
+  }
+  if (place.vegetarian === 'yes' || place.vegan === 'yes') points += 2
+  if (isIndulgentOnly(place)) points -= 15
+  return { points, reasons }
+}
+
 function providerQualityBoost(place: Restaurant): { points: number; reasons: string[] } {
   if (place.providerRating == null) return { points: 0, reasons: [] }
 
@@ -361,6 +381,10 @@ export function rankRestaurants(
     const diet = dietaryBoost(place, opts.dietary)
     score += diet.points
     reasons.push(...diet.reasons)
+
+    const healthy = healthyTilt(place)
+    score += healthy.points
+    reasons.push(...healthy.reasons)
 
     if (opts.dietary.includes('no_seed_oils') && opts.seedOilByPlaceId) {
       const info = opts.seedOilByPlaceId[place.id]

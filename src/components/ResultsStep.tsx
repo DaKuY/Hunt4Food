@@ -488,7 +488,7 @@ export function ResultsStep({
           <p className="muted">
             {healthyMode
               ? 'Starting a healthy review search…'
-              : 'Searching this neighborhood on OpenStreetMap…'}
+              : 'Searching Google for the healthiest matches nearby…'}
           </p>
           {[0, 1, 2].map((i) => (
             <div key={i} className="skeleton-card" />
@@ -610,9 +610,11 @@ export function ResultsStep({
 }
 
 function SourcesLine({ sources, healthyMode }: { sources: ProviderSources | null; healthyMode: boolean }) {
-  const searched = ['OpenStreetMap']
+  const searched: string[] = []
   if (sources?.google) searched.push('Google')
   if (sources?.yelp) searched.push('Yelp')
+  // OpenStreetMap is only used when Google isn't connected.
+  if (!sources?.google) searched.push('OpenStreetMap')
   const reviewsDown = proxyUnavailable()
   if (healthyMode && !reviewsDown) searched.push('review mentions')
   const off = sources ? [!sources.google && 'Google', !sources.yelp && 'Yelp'].filter(Boolean) : []
@@ -622,7 +624,7 @@ function SourcesLine({ sources, healthyMode }: { sources: ProviderSources | null
       {off.length === 2 ? (
         <>
           {' '}
-          · Google and Yelp not connected, so places missing from OpenStreetMap (many juice bars, like Pure Green)
+          · Google and Yelp not connected (GOOGLE_PLACES_API_KEY in Vercel), so many healthy spots like Pure Green
           can&apos;t show
         </>
       ) : off.length ? (

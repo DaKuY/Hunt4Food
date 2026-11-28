@@ -8,12 +8,24 @@ import { loadSettings } from './settings'
  * map only on the area picker and the results list, so personal use stays free.
  *
  * Key: VITE_GOOGLE_MAPS_API_KEY (browser key restricted to https://hunt4food.andrewcamero.com/*
- * and to the Maps JavaScript API), else the existing Places key. With no key, or if Google
- * fails to load, the app falls back to the OpenStreetMap (Leaflet) map.
+ * and to the Maps JavaScript API), else the browser Places key (VITE_GOOGLE_PLACES_API_KEY or
+ * the Settings override) if Maps JavaScript API is enabled on it. With no key, or if Google
+ * refuses it, the app shows the keyless Google Maps embed (GoogleEmbedMap) — never OpenStreetMap.
  */
 export function googleMapsKey(): string {
   const env = import.meta.env as Record<string, string | undefined>
-  return (env.VITE_GOOGLE_MAPS_API_KEY || loadSettings().googlePlacesApiKey || '').trim()
+  return (env.VITE_GOOGLE_MAPS_API_KEY || env.VITE_GOOGLE_PLACES_API_KEY || loadSettings().googlePlacesApiKey || '').trim()
+}
+
+/** Keyless maps.google.com embed URL for a place, a search, or just the area. */
+export function googleEmbedUrl(center: { lat: number; lon: number }, zoom: number, query?: string): string {
+  const params = new URLSearchParams({
+    q: query?.trim() || `${center.lat.toFixed(5)},${center.lon.toFixed(5)}`,
+    ll: `${center.lat.toFixed(5)},${center.lon.toFixed(5)}`,
+    z: String(Math.max(3, Math.min(18, Math.round(zoom)))),
+    output: 'embed',
+  })
+  return `https://maps.google.com/maps?${params}`
 }
 
 /** Advanced markers need a map ID; create one (free) in Cloud Console → Map Management. */

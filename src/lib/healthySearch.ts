@@ -621,6 +621,8 @@ export async function runHealthyHunt(opts: {
   keyword?: string
   taste: TasteProfile
   osmPlaces: Restaurant[]
+  /** Separate cache entry for a fallback run (e.g. 'osm' when OpenStreetMap was added). */
+  variant?: string
   /** Narrow the shown list; the cached pool stays complete so focus can change without a new hunt. */
   focus?: HealthyFocusId[]
   /** "no smoothies", "fast lunch": applied to the shown list like focus. */
@@ -637,7 +639,9 @@ export async function runHealthyHunt(opts: {
     opts.selectedCuisines,
     opts.dietary,
     // Focus changes which Google / Yelp searches run, so it is part of the cached hunt.
-    [opts.keyword, ...(opts.extraDiscoveryTerms ?? []), ...focus.map((f) => `focus:${f}`)].filter(Boolean).join(' | '),
+    [opts.keyword, ...(opts.extraDiscoveryTerms ?? []), ...focus.map((f) => `focus:${f}`), opts.variant && `variant:${opts.variant}`]
+      .filter(Boolean)
+      .join(' | '),
     opts.taste,
   )
   const cached = readCache<{ displayed: RankedRestaurant[]; pool: RankedRestaurant[] }>(key)

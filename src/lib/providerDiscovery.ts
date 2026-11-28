@@ -19,6 +19,8 @@ export type ProviderCandidate = {
   price?: string | null
   priceLevel?: string | number | null
   url?: string | null
+  summary?: string
+  servesVegetarianFood?: boolean
   matchedTerm: string
 }
 
@@ -109,10 +111,11 @@ export function buildDiscoveryTerms(
   const trimmedKeyword = keyword?.trim()
   if (trimmedKeyword) terms.push(trimmedKeyword)
 
-  for (const id of selectedCuisines) {
-    if (id === 'healthy') continue
-    terms.push(cuisineById(id).label)
-  }
+  const cuisines = selectedCuisines.filter((id) => id !== 'healthy')
+  for (const id of cuisines) terms.push(cuisineById(id).label)
+  // Healthy first, then the next best: also ask Google for the healthy version of the
+  // first cuisine ("healthy Mexican"), so clean kitchens are in the pool to rank.
+  if (cuisines.length) terms.push(`healthy ${cuisineById(cuisines[0]!).label.toLowerCase()}`)
 
   return terms
     .map((term) => term.trim())
@@ -160,9 +163,10 @@ export function lunchSpecialTerms(selectedCuisines: CuisineId[]): string[] {
  * at most 3 terms per call.
  */
 export const HEALTHY_DISCOVERY_TERM_GROUPS: string[][] = [
-  // Clean brands OpenStreetMap often lacks (Pure Green in Coppell isn't mapped); sugary smoothie chains usually are.
+  // Google Places is the whole pool now, so one broad healthy net plus the clean dishes,
+  // then the clean brands people mean (True Food Kitchen, Pure Green, Flower Child).
+  ['healthy restaurant', 'grass fed steak', 'wild salmon'],
   ['True Food Kitchen', 'Pure Green', 'Flower Child'],
-  ['grass fed steak', 'wild salmon', 'healthy bowls'],
 ]
 
 /** What each kind of healthy means as a Google / Yelp search phrase. */
@@ -193,7 +197,7 @@ export function healthyDiscoveryGroups(
     (term, index, all) => all.findIndex((other) => other.toLowerCase() === term.toLowerCase()) === index,
   )
   if (!unique.length) return HEALTHY_DISCOVERY_TERM_GROUPS
-  return [unique.slice(0, 3), HEALTHY_DISCOVERY_TERM_GROUPS[0]!]
+  return [unique.slice(0, 3), HEALTHY_DISCOVERY_TERM_GROUPS[1]!]
 }
 
 export async function discoverHealthyCandidates(
@@ -285,6 +289,8 @@ export function mergeProviderCandidates(
         existing.providerReviewCount = candidate.reviewCount ?? undefined
       }
       existing.address ||= candidate.address
+      existing.description ||= candidate.summary
+      if (candidate.servesVegetarianFood) existing.vegetarian ||= 'yes'
       existing.website ||= candidate.website
       existing.phone ||= candidate.phone
       if (candidate.source === 'yelp') existing.yelpId ||= candidate.id
@@ -307,6 +313,8 @@ export function mergeProviderCandidates(
       website: candidate.website,
       phone: candidate.phone,
       yelpId: candidate.source === 'yelp' ? candidate.id : undefined,
+      description: candidate.summary,
+      vegetarian: candidate.servesVegetarianFood ? 'yes' : undefined,
     }
     seedCandidateRating(place, cityLabel, candidate)
     pool.push(place)

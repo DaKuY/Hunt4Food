@@ -40,13 +40,14 @@ describe('healthyDiscoveryGroups', () => {
     expect(healthyDiscoveryGroups()).toEqual(HEALTHY_DISCOVERY_TERM_GROUPS)
     expect(healthyDiscoveryGroups({ focus: ['smoothie'] })).toEqual([
       ['smoothie bowl', 'acai bowl', 'juice bar'],
-      HEALTHY_DISCOVERY_TERM_GROUPS[0],
+      HEALTHY_DISCOVERY_TERM_GROUPS[1],
     ])
     expect(healthyDiscoveryGroups({ keyword: 'True Food Kitchen', dietary: ['no_seed_oils'], focus: ['seafood'] })[0]).toEqual([
       'True Food Kitchen',
       'seed oil free restaurant',
       'grilled salmon',
     ])
+    expect(HEALTHY_DISCOVERY_TERM_GROUPS[0]).toContain('healthy restaurant')
     // Always two provider calls, so the Google free tier lasts.
     expect(healthyDiscoveryGroups({ focus: ['steak', 'plant'], dietary: ['grass_fed'] })).toHaveLength(2)
   })
@@ -62,7 +63,22 @@ describe('buildDiscoveryTerms', () => {
   })
 
   it('does not send the generic Healthy label through normal provider discovery', () => {
-    expect(buildDiscoveryTerms(['healthy', 'salmon'], '')).toEqual(['Salmon'])
+    expect(buildDiscoveryTerms(['healthy', 'salmon'], '')).toEqual(['Salmon', 'healthy salmon'])
+  })
+
+  it('also asks Google for the healthy version of the cuisine when there is room', () => {
+    expect(buildDiscoveryTerms(['mexican'], '')).toEqual(['Mexican', 'healthy mexican'])
+  })
+
+  it('carries Google descriptions and vegetarian flags into the place, where healthy signals read them', () => {
+    const [place] = mergeProviderCandidates(
+      [],
+      [{ source: 'google', id: 'g1', name: 'Garden Table', lat: 33, lon: -97, categories: ['restaurant'],
+        summary: 'Organic, grass-fed bowls cooked in avocado oil', servesVegetarianFood: true, matchedTerm: '' }],
+      'Coppell, TX',
+    )
+    expect(place!.description).toMatch(/grass-fed/)
+    expect(place!.vegetarian).toBe('yes')
   })
 })
 

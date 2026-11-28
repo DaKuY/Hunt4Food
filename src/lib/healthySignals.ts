@@ -172,7 +172,7 @@ export function matchKnownChain(place: Restaurant): KnownHealthyChain | null {
 }
 
 export function listingBlob(place: Restaurant, extra = ''): string {
-  return `${place.name} ${place.cuisineRaw ?? ''} ${place.cuisines.join(' ')} ${place.amenity ?? ''} ${place.address ?? ''} ${extra}`
+  return `${place.name} ${place.cuisineRaw ?? ''} ${place.cuisines.join(' ')} ${place.amenity ?? ''} ${place.address ?? ''} ${place.description ?? ''} ${extra}`
 }
 
 export function isKnownQualityFallback(place: Restaurant): boolean {

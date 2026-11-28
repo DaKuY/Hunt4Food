@@ -30,12 +30,14 @@
   justify-content: space-between;
   gap: 0.75rem;
   padding: 1rem 1.25rem;
-  border-bottom: 1px solid var(--line);
-  backdrop-filter: blur(12px);
+  /* Base Camp header glass: ivory at 78%, the same bar as the lodge. */
+  border-bottom: 0.5px solid var(--linen-strong);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
   position: sticky;
   top: 0;
   z-index: 20;
-  background: rgba(250, 248, 244, 0.82);
+  background: color-mix(in srgb, var(--ivory) 78%, transparent);
 }
 
 .topbar-brands {
@@ -259,7 +261,7 @@ main {
 
 .field input {
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.72);
+  background: color-mix(in srgb, var(--porcelain) 72%, transparent);
   color: var(--text);
   border-radius: var(--radius-sm);
   padding: 0.85rem 1rem;
@@ -273,7 +275,7 @@ main {
 
 .field select {
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.72);
+  background: color-mix(in srgb, var(--porcelain) 72%, transparent);
   color: var(--text);
   border-radius: var(--radius-sm);
   padding: 0.85rem 1rem;
@@ -313,7 +315,7 @@ main {
   background: linear-gradient(180deg, var(--forest-hi), var(--forest) 55%, var(--forest-deep));
   border-color: var(--forest-deep);
   color: var(--ivory);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 6px 16px -8px rgba(6, 48, 27, 0.5);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--porcelain) 14%, transparent), 0 6px 16px -8px rgba(6, 48, 27, 0.5);
 }
 
 .btn.ghost {
@@ -339,7 +341,7 @@ main {
 
 .chip {
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.65);
+  background: color-mix(in srgb, var(--porcelain) 65%, transparent);
   color: var(--text);
   border-radius: var(--radius-sm);
   padding: 0.55rem 0.9rem;
@@ -361,7 +363,7 @@ main {
 .chip.ghost.on {
   background: rgba(184, 149, 108, 0.14);
   border-color: var(--accent-2);
-  color: #8a6a3f;
+  color: var(--brass);
 }
 
 .chip.primary {
@@ -386,8 +388,8 @@ main {
 }
 
 .chip.healthy {
-  border-color: #2f7d4a;
-  color: #1f5c36;
+  border-color: var(--forest-hi);
+  color: var(--forest);
   background: rgba(47, 125, 74, 0.1);
   font-weight: 700;
   padding: 0.7rem 1.25rem;
@@ -395,20 +397,20 @@ main {
 }
 
 .chip.healthy:hover:not(:disabled) {
-  border-color: #24663c;
+  border-color: var(--forest-deep);
   transform: translateY(-1px);
 }
 
 .chip.healthy.on {
-  background: #2f7d4a;
-  border-color: #24663c;
-  color: #fff;
+  background: var(--forest);
+  border-color: var(--forest-deep);
+  color: var(--ivory);
 }
 
 .healthy-helper {
   margin: 0.55rem 0 0;
   font-size: 0.88rem;
-  color: #1f5c36;
+  color: var(--forest);
   line-height: 1.45;
 }
 
@@ -418,7 +420,7 @@ main {
   border-radius: var(--radius-sm);
   border: 1px solid rgba(47, 125, 74, 0.28);
   background: rgba(47, 125, 74, 0.08);
-  color: #1f5c36;
+  color: var(--forest);
   font-size: 0.92rem;
 }
 
@@ -453,7 +455,7 @@ main {
   border-radius: 999px;
   border: 1px solid rgba(47, 125, 74, 0.35);
   background: rgba(47, 125, 74, 0.1);
-  color: #1f5c36;
+  color: var(--forest);
 }
 
 .evidence-quote {
@@ -522,32 +524,19 @@ main {
 .city-map {
   height: min(48vh, 420px);
   width: 100%;
-  background: #ebe4d8;
+  background: var(--linen);
 }
 
-.leaflet-container {
-  font-family: var(--font-body);
+/* Keyless Google Maps embed (no Maps JavaScript key configured). */
+.google-embed-map {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: var(--linen);
 }
 
-.leaflet-bar a {
-  border-color: var(--line);
-  color: var(--text);
-  background: rgba(255, 255, 255, 0.92);
-}
-
-.leaflet-bar a:hover {
-  background: rgba(133, 99, 42, 0.1);
-  color: var(--accent);
-}
-
-.leaflet-control-attribution {
-  background: rgba(250, 248, 244, 0.88) !important;
-  color: var(--muted) !important;
-  font-size: 0.68rem;
-}
-
-.leaflet-control-attribution a {
-  color: var(--accent);
+.results-map-shell.google-embed-map {
+  height: min(42vh, 360px);
 }
 
 .map-hint,
@@ -745,7 +734,7 @@ main {
   padding: 1.25rem;
   border-radius: var(--radius);
   border: 1px dashed var(--line);
-  background: rgba(255, 255, 255, 0.5);
+  background: color-mix(in srgb, var(--porcelain) 50%, transparent);
   display: flex;
   flex-direction: column;
   gap: 0.85rem;
@@ -769,7 +758,7 @@ main {
 .banner {
   background: rgba(133, 99, 42, 0.1);
   border: 1px solid rgba(133, 99, 42, 0.3);
-  color: #7a5f3a;
+  color: var(--brass);
   padding: 0.7rem 0.9rem;
   border-radius: var(--radius);
 }
@@ -802,7 +791,7 @@ main {
   padding: 1rem;
   border-radius: var(--radius);
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.65);
+  background: color-mix(in srgb, var(--porcelain) 65%, transparent);
 }
 
 .ratings-row {
@@ -819,7 +808,7 @@ main {
   padding: 0.35rem 0.65rem;
   border-radius: var(--radius-sm);
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.7);
+  background: color-mix(in srgb, var(--porcelain) 70%, transparent);
   text-decoration: none;
   min-width: 4.5rem;
 }
@@ -1028,7 +1017,7 @@ main {
   padding: 0.75rem 2.6rem 0.75rem 2.6rem;
   border: 1px solid var(--linen-strong);
   border-radius: var(--radius-sm);
-  background: #fff;
+  background: #fffefb;
   color: var(--text);
   /* 17px keeps iPhone Safari from zooming into the box. */
   font: inherit;
@@ -1043,7 +1032,7 @@ main {
 }
 
 .ask-bar .ask-field input::placeholder {
-  color: #8a8d82;
+  color: var(--ink-muted);
 }
 
 .ask-bar .ask-field input:focus,
@@ -1175,12 +1164,12 @@ main {
 }
 
 .seed-oil-verdict.free {
-  color: #1f5c36;
+  color: var(--forest);
   font-weight: 600;
 }
 
 .seed-oil-verdict.unknown {
-  color: #8a6a3f;
+  color: var(--brass);
 }
 
 /* Healthy list came up short: the closest good options, clearly labeled. */

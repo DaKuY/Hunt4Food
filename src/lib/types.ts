@@ -71,6 +71,8 @@ export type Restaurant = {
   discoveryTerms?: string[]
   providerRating?: number
   providerReviewCount?: number
+  /** Google's editorial summary of the place; read for healthy evidence. */
+  description?: string
 }
 
 export type HealthyLane = 'clean_cooking' | 'smoothie' | 'protein'

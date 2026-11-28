@@ -313,45 +313,18 @@ function SearchFlow() {
   // The Ask box is the main search; the map / city picker opens on request.
   const [showMapPicker, setShowMapPicker] = useState(false)
   const searchAbortRef = useRef<AbortController | null>(null)
-  const prefetchPromiseRef = useRef<Promise<Restaurant[]> | null>(null)
   const poolRef = useRef<Restaurant[]>([])
   const healthyPoolRef = useRef<RankedRestaurant[]>([])
   const autoRanRef = useRef(false)
   const tasteRef = useRef(taste)
   tasteRef.current = taste
 
-  const schedulePrefetch = useCallback((bounds: MapBounds) => {
-    prefetchPromiseRef.current = null
-    const promise: Promise<Restaurant[]> = fetchRestaurants(bounds)
-      .then((raw) => {
-        // A slower prefetch for the previous city must not overwrite the new city's pool.
-        if (prefetchPromiseRef.current === promise) {
-          poolRef.current = raw
-          setRawPlaces(raw)
-        }
-        return raw
-      })
-      .catch((err) => {
-        if (prefetchPromiseRef.current === promise) prefetchPromiseRef.current = null
-        throw err
-      })
-    // Background prefetch: a failure is handled when a search awaits it, so do not report it as unhandled.
-    promise.catch(() => {})
-    prefetchPromiseRef.current = promise
-  }, [])
-
+  /**
+   * OpenStreetMap listings: only a fallback for when Google Places isn't connected on the
+   * server (GOOGLE_PLACES_API_KEY) or finds almost nothing. Google is the main source.
+   */
   const loadRestaurantPool = useCallback(async (bounds: MapBounds, signal?: AbortSignal): Promise<Restaurant[]> => {
     if (poolRef.current.length) return poolRef.current
-
-    const prefetch = prefetchPromiseRef.current
-    if (prefetch) {
-      try {
-        return await prefetch
-      } catch {
-        prefetchPromiseRef.current = null
-      }
-    }
-
     return fetchRestaurants(bounds, signal)
   }, [])
 
@@ -517,36 +490,46 @@ function SearchFlow() {
         setDisplayPlaces([])
         setHealthyStatus('Searching nearby, then reading reviews for grass-fed, clean oils, and healthy picks…')
         try {
-          const juicePromise = fetchRestaurants(healthyBounds(selection), ctrl.signal, { includeJuiceShops: true }).then(
-            (raw) => {
-              poolRef.current = raw
-              setRawPlaces(raw)
-              return raw
-            },
-          )
-          const osm = await juicePromise
+          poolRef.current = []
+          const hunt = (osmPlaces: Restaurant[], variant?: string) =>
+            runHealthyHunt({
+              city: selection,
+              selectedCuisines: food,
+              dietary: dietaryPrefs,
+              keyword: searchKeyword,
+              taste: tasteRef.current,
+              osmPlaces,
+              variant,
+              focus: healthyFocusRef.current,
+              prefs: healthyPrefsRef.current,
+              extraDiscoveryTerms: lunchFilterRef.current === 'special' ? lunchSpecialTerms(food) : [],
+              signal: ctrl.signal,
+              onProgress: (update) => {
+                if (ctrl.signal.aborted) return
+                setHealthyStatus(update.status)
+                if (update.places?.length) {
+                  setDisplayPlaces(update.places)
+                  setSeenIds(new Set(update.places.map((p) => p.id)))
+                  setLoading(false)
+                }
+              },
+            })
+          // Google Places first: the healthy searches themselves ("healthy restaurant",
+          // grass-fed steak, wild salmon, the clean brands) build the pool.
+          let result = await hunt([])
           if (ctrl.signal.aborted) return
-          const result = await runHealthyHunt({
-            city: selection,
-            selectedCuisines: food,
-            dietary: dietaryPrefs,
-            keyword: searchKeyword,
-            taste: tasteRef.current,
-            osmPlaces: osm,
-            focus: healthyFocusRef.current,
-            prefs: healthyPrefsRef.current,
-            extraDiscoveryTerms: lunchFilterRef.current === 'special' ? lunchSpecialTerms(food) : [],
-            signal: ctrl.signal,
-            onProgress: (update) => {
-              if (ctrl.signal.aborted) return
-              setHealthyStatus(update.status)
-              if (update.places?.length) {
-                setDisplayPlaces(update.places)
-                setSeenIds(new Set(update.places.map((p) => p.id)))
-                setLoading(false)
-              }
-            },
-          })
+          if (!lastProviderSources()?.google || result.pool.length < 5) {
+            // Google isn't connected or found almost nothing: add OpenStreetMap listings.
+            const osm = await fetchRestaurants(healthyBounds(selection), ctrl.signal, { includeJuiceShops: true }).catch(
+              () => [] as Restaurant[],
+            )
+            if (ctrl.signal.aborted) return
+            if (osm.length) {
+              poolRef.current = osm
+              setRawPlaces(osm)
+              result = await hunt(osm, 'osm')
+            }
+          }
           if (ctrl.signal.aborted) return
           healthyPoolRef.current = result.pool
           setProviderSources(lastProviderSources())
@@ -587,30 +570,27 @@ function SearchFlow() {
         lunchFilterRef.current === 'special' ? lunchSpecialTerms(food) : [],
       ).catch(() => [])
 
-      let osmPlaces = poolRef.current
-      let osmFailed = false
-
-      if (osmPlaces.length) {
-        rankPool(osmPlaces)
-      } else {
-        setLoading(true)
-        setDisplayPlaces([])
-        try {
-          osmPlaces = await loadRestaurantPool(selection.bounds, ctrl.signal)
-          if (ctrl.signal.aborted) return
-          if (osmPlaces.length) rankPool(osmPlaces)
-        } catch (e) {
-          if ((e as Error).name === 'AbortError' || ctrl.signal.aborted) return
-          osmFailed = true
-          osmPlaces = []
-        }
-      }
-
+      setLoading(true)
+      setDisplayPlaces([])
       const providerCandidates = await providerPromise
       if (ctrl.signal.aborted) return
       setProviderSources(lastProviderSources())
 
-      const merged = mergeProviderCandidates(osmPlaces, providerCandidates, selection.label)
+      // Google Places (plus Yelp) is the pool; OpenStreetMap only fills in when Google
+      // isn't connected or found almost nothing.
+      let merged = mergeProviderCandidates([], providerCandidates, selection.label)
+      let osmFailed = false
+      if (!lastProviderSources()?.google || merged.length < 5) {
+        try {
+          poolRef.current = []
+          const osmPlaces = await loadRestaurantPool(selection.bounds, ctrl.signal)
+          if (ctrl.signal.aborted) return
+          merged = mergeProviderCandidates(osmPlaces, providerCandidates, selection.label)
+        } catch (e) {
+          if ((e as Error).name === 'AbortError' || ctrl.signal.aborted) return
+          osmFailed = true
+        }
+      }
       if (merged.length) {
         rankPool(merged)
         return
@@ -685,11 +665,6 @@ function SearchFlow() {
     }
   }, [city, cuisines, dietary, keyword, taste, displayPlaces, favoriteIds, seenIds, rawPlaces, loadRestaurantPool, healthyFocus])
 
-  useEffect(() => {
-    if (!city) return
-    schedulePrefetch(city.bounds)
-  }, [city, schedulePrefetch])
-
   // Auto-run when shared URL has city + cuisines or keyword
   useEffect(() => {
     if (autoRanRef.current || !restored || !hasSearchCriteria(initialCuisines, params.get('keyword') ?? '')) return
@@ -718,8 +693,6 @@ function SearchFlow() {
     setShowMapPicker(false)
     setResolvingLocation(false)
     poolRef.current = []
-    // A search started right away (typed search) must not await the previous city's prefetch.
-    prefetchPromiseRef.current = null
     setRawPlaces([])
     updateParams((next) => {
       next.set('city', selection.label)
@@ -1080,7 +1053,6 @@ function SearchFlow() {
     setHealthyStatus(null)
     poolRef.current = []
     healthyPoolRef.current = []
-    prefetchPromiseRef.current = null
     // The saved-link auto-search is for page load only. Re-arming it here re-ran the old
     // search (its params are still in the URL for one render) and left a blank results page.
     autoRanRef.current = true
@@ -1446,11 +1418,11 @@ function Shell() {
       </main>
       <footer className="site-footer">
         <p>
-          <BrandMark size="sm" /> · Maps by Google. Places from Google, Yelp and ©{' '}
+          <BrandMark size="sm" /> · Maps and places by Google, plus Yelp (©{' '}
           <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">
             OpenStreetMap contributors
-          </a>
-          ; ratings from Google, Yelp, and TripAdvisor when available. Seed-oil chain grades from{' '}
+          </a>{' '}
+          only when Google isn&apos;t connected); ratings from Google, Yelp, and TripAdvisor when available. Seed-oil chain grades from{' '}
           <a href="https://seedoiltracker.com" target="_blank" rel="noreferrer">
             Seed Oil Tracker
           </a>
