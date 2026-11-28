@@ -118,7 +118,7 @@ export function CuisineStep({
           </p>
         ) : (
           <p className="muted small">
-            True Food Kitchen-style cooking, smoothie spots like Tropical Smoothie and Pure Green, and steak, salmon, or chicken options.
+            True Food Kitchen-style cooking, clean juice and smoothie bars like Pure Green, and grass-fed steak, wild salmon, or chicken options.
           </p>
         )}
       </div>

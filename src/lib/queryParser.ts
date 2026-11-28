@@ -281,10 +281,19 @@ export function withoutPlaceGuess(parsed: ParsedQuery): ParsedQuery {
   return { ...parsed, keyword, placeGuess: null }
 }
 
+/** Hunt4Food's default kind of healthy: clean kitchens (and clean juice bars). */
+export const DEFAULT_HEALTHY_FOCUS: HealthyFocusId[] = ['clean']
+
+/** Plain "healthy" (no kind, dish, brand or other food named) starts with Clean kitchens selected. */
+export function withDefaultHealthyFocus(parsed: ParsedQuery): ParsedQuery {
+  if (!parsed.healthy || parsed.healthyFocus.length || parsed.brand || parsed.keyword || parsed.cuisines.length) return parsed
+  return { ...parsed, healthyFocus: [...DEFAULT_HEALTHY_FOCUS] }
+}
+
 /** Short human summary of what was understood, for the confirmation line. */
 export function describeParsedQuery(parsed: ParsedQuery, cuisineLabel: (id: CuisineId) => string): string[] {
   const parts: string[] = []
-  if (parsed.healthy) parts.push(parsed.quick ? 'Healthy, quick' : 'Healthy')
+  if (parsed.healthy) parts.push(parsed.quick ? 'Healthy & clean, quick' : 'Healthy & clean')
   else if (parsed.quick) parts.push('Quick')
   const FOCUS_LABELS: Record<HealthyFocusId, string> = {
     seafood: 'salmon & seafood',

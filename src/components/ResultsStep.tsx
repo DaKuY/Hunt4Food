@@ -18,6 +18,7 @@ import { lunchVerdict } from '../lib/lunch'
 import { seedOilVerdict } from '../lib/seedOilStatus'
 import type { HealthyPrefs } from '../lib/healthySearch'
 import type { ProviderSources } from '../lib/providerDiscovery'
+import { proxyUnavailable } from '../lib/ratingsProxy'
 import type { HealthyFocusId, RankedRestaurant } from '../lib/types'
 import { RatingsRow } from './RatingsRow'
 
@@ -198,7 +199,7 @@ export function ResultsStep({
             {isFavorite && <span className="favorite-badge">Favorite</span>}
           </h3>
           <p className="meta">
-            {place.cuisines.slice(0, 3).join(' · ') || place.amenity || 'Restaurant'}
+            {place.cuisines.slice(0, 3).map((c) => c.replace(/_/g, ' ')).join(' · ') || place.amenity || 'Restaurant'}
             {ratings?.price.label ? (
               <>
                 {' · '}
@@ -324,7 +325,7 @@ export function ResultsStep({
         <p className="lede">
           {healthyMode ? (
             <>
-              Live search for True Food Kitchen–style restaurants, smoothie spots like Tropical Smoothie and Pure Green, and grass-fed steak, salmon, or chicken
+              Live search for True Food Kitchen–style restaurants, clean juice and smoothie bars like Pure Green, and grass-fed steak, wild salmon, or chicken
               {keyword ? (
                 <>
                   {' '}
@@ -612,12 +613,22 @@ function SourcesLine({ sources, healthyMode }: { sources: ProviderSources | null
   const searched = ['OpenStreetMap']
   if (sources?.google) searched.push('Google')
   if (sources?.yelp) searched.push('Yelp')
-  if (healthyMode) searched.push('review mentions')
+  const reviewsDown = proxyUnavailable()
+  if (healthyMode && !reviewsDown) searched.push('review mentions')
   const off = sources ? [!sources.google && 'Google', !sources.yelp && 'Yelp'].filter(Boolean) : []
   return (
     <p className="sources-line muted small">
       Searched {searched.join(' · ')}
-      {off.length ? <> · {off.join(' and ')} not connected</> : null}
+      {off.length === 2 ? (
+        <>
+          {' '}
+          · Google and Yelp not connected, so places missing from OpenStreetMap (many juice bars, like Pure Green)
+          can&apos;t show
+        </>
+      ) : off.length ? (
+        <> · {off[0]} not connected</>
+      ) : null}
+      {healthyMode && reviewsDown ? <> · review mentions unavailable (the ratings proxy isn&apos;t answering)</> : null}
     </p>
   )
 }

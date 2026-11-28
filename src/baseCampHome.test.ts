@@ -98,7 +98,8 @@ describe('leave-to-lodge path', () => {
     const calls = [...app.matchAll(/setParams\(/g)]
     expect(calls).toHaveLength(1)
     expect(app).toContain('setParams(next, { replace: true })')
-    expect([...app.matchAll(/updateParams\(/g)].length).toBeGreaterThanOrEqual(5)
+    // City, search filters, healthy focus, New search (the last-area bootstrap is gone: a visit finds the phone).
+    expect([...app.matchAll(/updateParams\(/g)].length).toBeGreaterThanOrEqual(4)
   })
 
   it('sends first-screen Back to the lodge instead of bouncing city↔cuisine', () => {

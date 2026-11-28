@@ -36,9 +36,12 @@ describe('healthy brands are not treated as fast food', () => {
 })
 
 describe('healthy ranking', () => {
-  it('puts True Food Kitchen, Tropical Smoothie Cafe and Pure Green in the top tier', () => {
-    for (const name of ['True Food Kitchen', 'Tropical Smoothie Cafe', 'Pure Green']) {
+  it('puts clean brands (True Food Kitchen, Pure Green) in the top tier, sugary smoothie chains lower', () => {
+    for (const name of ['True Food Kitchen', 'Pure Green', 'Clean Juice', 'Nekter Juice Bar']) {
       expect(healthyQualityTier(place({ name }), [])).toBe(0)
+    }
+    for (const name of ['Tropical Smoothie Cafe', 'Smoothie King', 'Jamba']) {
+      expect(healthyQualityTier(place({ name }), [])).toBe(2)
     }
   })
 
@@ -75,10 +78,12 @@ describe('healthy ranking', () => {
       ranked({ id: 'bar', name: 'Sports Bar & Grill', cuisines: ['burger'] }, 99),
     ]
     const top = pickHealthyLanes(pool, 6).map((p) => p.id)
-    expect(top.filter((id) => id.startsWith('ts'))).toEqual(['ts1'])
+    expect(top.filter((id) => id.startsWith('ts')).length).toBeLessThanOrEqual(1)
     expect(top).toEqual(expect.arrayContaining(['tf', 'pg', 'st', 'sal']))
     expect(top).not.toContain('bar')
-    expect(top).not.toContain('nk') // smoothie lane capped at half the list
+    expect(top).not.toContain('sk') // smoothie lane is capped; sugary chains come last
+    // Clean juice bars lead the sugar-forward chains.
+    expect(top.indexOf('pg')).toBeLessThan(top.includes('ts1') ? top.indexOf('ts1') : Infinity)
   })
 
   it('still returns every place when asked for the full list', () => {

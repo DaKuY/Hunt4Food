@@ -160,7 +160,8 @@ export function lunchSpecialTerms(selectedCuisines: CuisineId[]): string[] {
  * at most 3 terms per call.
  */
 export const HEALTHY_DISCOVERY_TERM_GROUPS: string[][] = [
-  ['True Food Kitchen', 'Tropical Smoothie Cafe', 'Pure Green'],
+  // Clean brands OpenStreetMap often lacks (Pure Green in Coppell isn't mapped); sugary smoothie chains usually are.
+  ['True Food Kitchen', 'Pure Green', 'Flower Child'],
   ['grass fed steak', 'wild salmon', 'healthy bowls'],
 ]
 
@@ -217,11 +218,13 @@ async function fetchProviderCandidates(
 ): Promise<ProviderCandidate[]> {
   if (!terms.length) return []
 
+  // About a 1 km grid: the default search runs on every open, and a phone's fix wobbles
+  // a little each time, so nearby opens on the same day reuse one set of Google / Yelp lookups.
   const cacheKey = [
-    'providerDiscovery:v2',
+    'providerDiscovery:v3',
     utcDayKey(),
-    city.center.lat.toFixed(3),
-    city.center.lon.toFixed(3),
+    city.center.lat.toFixed(2),
+    city.center.lon.toFixed(2),
     terms.map((term) => term.toLowerCase()).sort().join('|'),
   ].join(':')
   const cached = readCache<{ places: ProviderCandidate[]; sources: ProviderSources }>(cacheKey)

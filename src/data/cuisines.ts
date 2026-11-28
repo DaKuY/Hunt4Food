@@ -148,7 +148,7 @@ export const CUISINES: CuisineOption[] = [
   },
   {
     id: 'healthy',
-    label: 'Healthy',
+    label: 'Healthy & clean',
     group: 'healthy',
     osmTags: ['healthy', 'salad', 'bowl', 'juice', 'vegetarian', 'vegan'],
     keywords: [

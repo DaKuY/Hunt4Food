@@ -81,6 +81,11 @@ export type KnownHealthyChain = {
   name: string
   lane: HealthyLane
   aliases: string[]
+  /**
+   * Sugar-forward smoothie chains (fruit juice bases, sherbet, added sugar). Still healthy picks,
+   * but ranked with ordinary smoothie shops, after clean juice bars like Pure Green.
+   */
+  sugary?: boolean
 }
 
 export const KNOWN_HEALTHY_CHAINS: KnownHealthyChain[] = [
@@ -97,14 +102,14 @@ export const KNOWN_HEALTHY_CHAINS: KnownHealthyChain[] = [
   { name: 'Lyfe Kitchen', lane: 'clean_cooking', aliases: ['lyfe kitchen'] },
   { name: 'Snap Kitchen', lane: 'clean_cooking', aliases: ['snap kitchen'] },
   { name: 'Salata', lane: 'clean_cooking', aliases: ['salata'] },
-  { name: 'Tropical Smoothie Cafe', lane: 'smoothie', aliases: ['tropical smoothie'] },
+  { name: 'Tropical Smoothie Cafe', lane: 'smoothie', aliases: ['tropical smoothie'], sugary: true },
   { name: 'Pure Green', lane: 'smoothie', aliases: ['pure green'] },
-  { name: 'Smoothie King', lane: 'smoothie', aliases: ['smoothie king'] },
+  { name: 'Smoothie King', lane: 'smoothie', aliases: ['smoothie king'], sugary: true },
   { name: 'Juice Press', lane: 'smoothie', aliases: ['juice press'] },
   { name: 'Clean Juice', lane: 'smoothie', aliases: ['clean juice'] },
-  { name: 'Robeks', lane: 'smoothie', aliases: ['robeks'] },
-  { name: 'Jamba', lane: 'smoothie', aliases: ['jamba', 'jamba juice'] },
-  { name: 'Playa Bowls', lane: 'smoothie', aliases: ['playa bowls'] },
+  { name: 'Robeks', lane: 'smoothie', aliases: ['robeks'], sugary: true },
+  { name: 'Jamba', lane: 'smoothie', aliases: ['jamba', 'jamba juice'], sugary: true },
+  { name: 'Playa Bowls', lane: 'smoothie', aliases: ['playa bowls'], sugary: true },
   { name: 'Nekter Juice Bar', lane: 'smoothie', aliases: ['nekter'] },
   { name: 'Grabbagreen', lane: 'smoothie', aliases: ['grabbagreen'] },
 ]
@@ -233,7 +238,11 @@ export function isIndulgentOnly(place: Restaurant): boolean {
 export const HEALTHY_EXCLUDED_TIER = 3
 
 export function healthyQualityTier(place: Restaurant, signals: HealthySignal[]): number {
-  if (matchKnownChain(place) || hasPrimaryHealthyEvidence(signals)) return 0
+  // Healthy and clean first: clean brands and real clean-food evidence lead; sugar-forward chains
+  // rank with other smoothie shops.
+  const chain = matchKnownChain(place)
+  if ((chain && !chain.sugary) || hasPrimaryHealthyEvidence(signals)) return 0
+  if (chain?.sugary) return 2
   if (isIndulgentOnly(place)) return HEALTHY_EXCLUDED_TIER
   if (isQualityWholeFoodFallback(place, signals) || isPlantForward(place)) return 1
   if (isSmoothieOrJuice(place, signals)) return 2
@@ -255,7 +264,7 @@ export function healthyCategoryReason(place: Restaurant, signals: HealthySignal[
 }
 
 export const HEALTHY_FOCUS_OPTIONS: Array<{ id: HealthyFocusId; label: string; hint: string }> = [
-  { id: 'clean', label: 'Clean kitchens', hint: 'True Food Kitchen–style; grass-fed, organic, no seed oils' },
+  { id: 'clean', label: 'Clean kitchens', hint: 'True Food Kitchen–style and clean juice bars; grass-fed, organic, no seed oils' },
   { id: 'smoothie', label: 'Smoothies & bowls', hint: 'Tropical Smoothie, Pure Green, juice and açaí bars' },
   { id: 'steak', label: 'Steak', hint: 'Steakhouses and grass-fed steak' },
   { id: 'seafood', label: 'Salmon & seafood', hint: 'Wild salmon, seafood, sushi and poke' },
@@ -276,7 +285,8 @@ export function matchesHealthyFocus(
   const chain = matchKnownChain(place)
   switch (focus) {
     case 'clean':
-      return chain?.lane === 'clean_cooking' || hasPrimaryHealthyEvidence(signals) || /\b(organic|farm[-_ ]to[-_ ]table)\b/.test(blob)
+      // Clean kitchens, and the organic juice bars without the sugar (Pure Green, Clean Juice, Nekter).
+      return (chain !== null && !chain.sugary) || hasPrimaryHealthyEvidence(signals) || /\b(organic|farm[-_ ]to[-_ ]table)\b/.test(blob)
     case 'smoothie':
       return chain?.lane === 'smoothie' || isSmoothieOrJuice(place, signals)
     case 'steak':
@@ -403,9 +413,12 @@ export function healthyInstantBoost(place: Restaurant): {
   if (chain?.lane === 'clean_cooking') {
     points += 45
     reasons.push(`Known clean-food restaurant like ${chain.name}`)
-  } else if (chain) {
+  } else if (chain && !chain.sugary) {
     points += 35
-    reasons.push(`Known healthy smoothie & bowl spot like ${chain.name}`)
+    reasons.push(`Clean juice & smoothie bar like ${chain.name}`)
+  } else if (chain) {
+    points += 12
+    reasons.push(`Smoothie chain (${chain.name}); ask for no added sugar`)
   }
 
   if (isKnownQualityFallback(place)) {

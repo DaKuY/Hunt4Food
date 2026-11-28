@@ -37,6 +37,19 @@ function cleanTerms(url: URL): string[] {
     .slice(0, MAX_TERMS)
 }
 
+/** Words that already name a kind of place: no "restaurant" suffix needed. */
+const VENUE_WORD = /\b(?:restaurants?|cafe|café|kitchen|bar|juice|smoothies?|acai|açaí|bowls?|steakhouse|grill|bistro|bakery|poke|eatery|diner|market|deli|tavern)\b/i
+
+/**
+ * What to send as the search phrase. A brand ("Pure Green", "True Food Kitchen") or a venue
+ * ("juice bar", "smoothie bowl") is searched as typed; "Pure Green restaurant" made Yelp miss the
+ * juice bar. Plain foods ("wild salmon", "grass fed") get "restaurant" so markets don't win.
+ */
+export function searchPhrase(term: string): string {
+  const brandLike = /[A-Z]/.test(term.trim()[0] ?? '')
+  return brandLike || VENUE_WORD.test(term) ? term : `${term} restaurant`
+}
+
 function finiteCoordinate(raw: string | null, min: number, max: number): number | null {
   const value = Number(raw)
   return Number.isFinite(value) && value >= min && value <= max ? value : null
@@ -79,7 +92,7 @@ async function googleSearch(
       referer: 'https://hunt4food.andrewcamero.com/',
     },
     body: JSON.stringify({
-      textQuery: `${term} restaurant ${city}`,
+      textQuery: `${searchPhrase(term)} near ${city}`,
       maxResultCount: RESULTS_PER_TERM,
       locationBias: {
         circle: {
@@ -139,7 +152,9 @@ async function yelpSearch(
   lon: number,
 ): Promise<ProviderCandidate[]> {
   const url = new URL('https://api.yelp.com/v3/businesses/search')
-  url.searchParams.set('term', `${term} restaurant`)
+  url.searchParams.set('term', searchPhrase(term))
+  // Restaurants plus food spots (juice bars, smoothies, cafés), never unrelated businesses.
+  url.searchParams.set('categories', 'restaurants,food')
   url.searchParams.set('latitude', String(lat))
   url.searchParams.set('longitude', String(lon))
   url.searchParams.set('radius', String(RADIUS_METERS))
